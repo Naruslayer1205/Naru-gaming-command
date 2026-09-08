@@ -10,8 +10,9 @@
   },
   "engines": {
     "node": ">=20"
-  },
+ {
   "dependencies": {
-    "discord.js": "^14.22.1"
+    "discord.js": "^14.22.1",
+    "puppeteer": "^24.0.0"
   }
 }
