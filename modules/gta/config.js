@@ -1,35 +1,20 @@
 const path = require('path');
 
-
 module.exports = {
+  channelId: '1546773502336442420',
 
-  channelId:
-    '1546773502336442420',
+  checkInterval: 15 * 60 * 1000,
 
-
-  checkInterval:
-    15 * 60 * 1000,
-
-
-  color:
-    0xF2A900,
-
+  color: 0xF2A900,
 
   newswireUrl:
-    'https://www.rockstargames.com/newswire',
+    'https://www.rockstargames.com/fr/newswire',
 
-
-  maxCandidates:
-    30,
-
-
-  stateFile:
-    path.join(
-      __dirname,
-      '..',
-      '..',
-      'data',
-      'gta-update-state.json'
-    )
-
+  stateFile: path.join(
+    __dirname,
+    '..',
+    '..',
+    'data',
+    'gta-update-state.json'
+  )
 };
