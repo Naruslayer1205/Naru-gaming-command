@@ -1,0 +1,17 @@
+{
+  "name": "naru-gaming-command",
+  "version": "2.0.0",
+  "description": "Bot Discord officiel de Naru Gaming Command - mises à jour multi-jeux",
+  "main": "index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node index.js",
+    "check": "node --check index.js && node --check modules/ark/ark-updates.js && node --check modules/gta/gta-updates.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "discord.js": "^14.22.1"
+  }
+}

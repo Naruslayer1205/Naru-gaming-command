@@ -1,0 +1,53 @@
+const {
+  Client,
+  GatewayIntentBits,
+  Events,
+  ActivityType
+} = require('discord.js');
+
+const startArkUpdates = require('./modules/ark/ark-updates');
+const startGtaUpdates = require('./modules/gta/gta-updates');
+
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds
+  ]
+});
+
+client.once(
+  Events.ClientReady,
+  async readyClient => {
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('🎮 NARU GAMING COMMAND');
+    console.log(`✅ Connecté en tant que ${readyClient.user.tag}`);
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+    readyClient.user.setActivity({
+      name: 'Naru Gaming Command',
+      type: ActivityType.Watching
+    });
+
+    // Chaque jeu est totalement séparé dans son propre module.
+    startArkUpdates(readyClient);
+    startGtaUpdates(readyClient);
+  }
+);
+
+client.on('error', error => {
+  console.error('❌ Erreur Discord :', error);
+});
+
+process.on('unhandledRejection', error => {
+  console.error('❌ Promesse rejetée :', error);
+});
+
+process.on('uncaughtException', error => {
+  console.error('❌ Exception non gérée :', error);
+});
+
+if (!process.env.DISCORD_TOKEN) {
+  console.error('❌ Variable DISCORD_TOKEN manquante.');
+  process.exit(1);
+}
+
+client.login(process.env.DISCORD_TOKEN);
