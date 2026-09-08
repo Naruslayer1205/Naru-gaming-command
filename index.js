@@ -6,6 +6,8 @@ const {
 } = require('discord.js');
 
 const startArkUpdates = require('./modules/ark/ark-updates');
+const startArkBridge = require('./modules/ark/ark-bridge');
+
 const startGtaUpdates = require('./modules/gta/gta-updates');
 
 const client = new Client({
@@ -27,8 +29,11 @@ client.once(
       type: ActivityType.Watching
     });
 
-    // Chaque jeu est totalement séparé dans son propre module.
+    // ARK
     startArkUpdates(readyClient);
+    startArkBridge(readyClient);
+
+    // GTA
     startGtaUpdates(readyClient);
   }
 );
