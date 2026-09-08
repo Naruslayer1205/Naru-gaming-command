@@ -6,30 +6,57 @@ const {
 const ARK_ROLE_ID =
   process.env.ARK_ROLE_ID;
 
+const CATEGORY_PREFIX =
+  '🦖 ARK — ';
+
 // ─────────────────────────────────────
-// NOM DE LA CATÉGORIE
+// NOM CATÉGORIE
 // ─────────────────────────────────────
 
 function getCategoryName(member) {
-  return `🦖 ARK — ${member.displayName}`;
+  return `${CATEGORY_PREFIX}${member.displayName}`;
 }
 
 // ─────────────────────────────────────
-// TROUVER LA CATÉGORIE D'UN JOUEUR
+// TROUVER CATÉGORIE JOUEUR
 // ─────────────────────────────────────
 
-function findPlayerCategory(guild, userId) {
+function findPlayerCategory(
+  guild,
+  userId
+) {
   return guild.channels.cache.find(
-    channel =>
-      channel.type ===
-        ChannelType.GuildCategory &&
-      channel.topic ===
-        `naru-ark-player:${userId}`
+    channel => {
+
+      if (
+        channel.type !==
+        ChannelType.GuildCategory
+      ) {
+        return false;
+      }
+
+      if (
+        !channel.name.startsWith(
+          CATEGORY_PREFIX
+        )
+      ) {
+        return false;
+      }
+
+      const permission =
+        channel.permissionOverwrites.cache.get(
+          userId
+        );
+
+      return Boolean(
+        permission
+      );
+    }
   );
 }
 
 // ─────────────────────────────────────
-// TROUVER UN SALON
+// TROUVER SALON
 // ─────────────────────────────────────
 
 function findChannel(
@@ -39,19 +66,21 @@ function findChannel(
 ) {
   return guild.channels.cache.find(
     channel =>
-      channel.parentId === categoryId &&
+      channel.parentId ===
+        categoryId &&
       channel.name === name
   );
 }
 
 // ─────────────────────────────────────
-// CRÉATION DE L'ESPACE ARK
+// CRÉATION ESPACE ARK
 // ─────────────────────────────────────
 
 async function createArkPlayerSpace(
   member
 ) {
-  const guild = member.guild;
+  const guild =
+    member.guild;
 
   if (!ARK_ROLE_ID) {
     console.error(
@@ -61,7 +90,12 @@ async function createArkPlayerSpace(
     return null;
   }
 
-  // Le membre doit avoir le rôle ARK
+  // Ignore les bots
+  if (member.user.bot) {
+    return null;
+  }
+
+  // Doit avoir le rôle ARK
   if (
     !member.roles.cache.has(
       ARK_ROLE_ID
@@ -81,16 +115,16 @@ async function createArkPlayerSpace(
     );
 
   if (!category) {
+
     category =
       await guild.channels.create({
         name:
-          getCategoryName(member),
+          getCategoryName(
+            member
+          ),
 
         type:
           ChannelType.GuildCategory,
-
-        topic:
-          `naru-ark-player:${member.id}`,
 
         permissionOverwrites: [
           {
@@ -108,8 +142,7 @@ async function createArkPlayerSpace(
 
             allow: [
               PermissionFlagsBits.ViewChannel,
-              PermissionFlagsBits.ReadMessageHistory,
-              PermissionFlagsBits.SendMessages
+              PermissionFlagsBits.ReadMessageHistory
             ]
           },
 
@@ -131,73 +164,64 @@ async function createArkPlayerSpace(
     console.log(
       `🦖 Catégorie ARK créée pour ${member.user.tag}`
     );
+  } else {
+
+    // Si le joueur change son pseudo Discord,
+    // on met le nom de catégorie à jour.
+
+    const expectedName =
+      getCategoryName(
+        member
+      );
+
+    if (
+      category.name !==
+      expectedName
+    ) {
+      await category.setName(
+        expectedName
+      );
+    }
   }
 
   // ─────────────────────────────
-  // SALONS
+  // SALONS À CRÉER
   // ─────────────────────────────
 
   const channels = [
-    {
-      name: '👤・personnage',
-
-      topic:
-        `Informations du personnage ARK de ${member.user.tag}`
-    },
-
-    {
-      name: '🌍・monde',
-
-      topic:
-        `Informations du monde ARK de ${member.user.tag}`
-    },
-
-    {
-      name: '🦕・dinos',
-
-      topic:
-        `Dinos ARK de ${member.user.tag}`
-    },
-
-    {
-      name: '💀・journal',
-
-      topic:
-        `Journal ARK de ${member.user.tag}`
-    },
-
-    {
-      name: '⚙️・commandes',
-
-      topic:
-        `Commandes et statut du Naru ARK Bridge de ${member.user.tag}`
-    }
+    '👤・personnage',
+    '🌍・monde',
+    '🦕・dinos',
+    '💀・journal',
+    '⚙️・commandes'
   ];
 
   const createdChannels = {};
 
-  for (const channelData of channels) {
+  for (
+    const channelName
+    of channels
+  ) {
+
     let channel =
       findChannel(
         guild,
         category.id,
-        channelData.name
+        channelName
       );
 
     if (!channel) {
+
       channel =
         await guild.channels.create({
           name:
-            channelData.name,
+            channelName,
 
           type:
             ChannelType.GuildText,
 
           parent:
             category.id,
-
-          topic:
-            channelData.topic,
 
           permissionOverwrites: [
             {
@@ -234,15 +258,16 @@ async function createArkPlayerSpace(
         });
 
       console.log(
-        `✅ Salon ${channelData.name} créé pour ${member.user.tag}`
+        `✅ Salon ${channelName} créé pour ${member.user.tag}`
       );
     }
 
     createdChannels[
-      channelData.name
+      channelName
     ] = channel;
   }
 
+  console.log('');
   console.log(
     `✅ Espace ARK prêt pour ${member.user.tag}`
   );
@@ -255,7 +280,7 @@ async function createArkPlayerSpace(
 }
 
 // ─────────────────────────────────────
-// VÉRIFICATION DES MEMBRES EXISTANTS
+// MEMBRES AYANT DÉJÀ LE RÔLE
 // ─────────────────────────────────────
 
 async function syncExistingArkMembers(
@@ -269,7 +294,9 @@ async function syncExistingArkMembers(
     const guild
     of client.guilds.cache.values()
   ) {
+
     try {
+
       await guild.members.fetch();
 
       const members =
@@ -293,7 +320,9 @@ async function syncExistingArkMembers(
           member
         );
       }
+
     } catch (error) {
+
       console.error(
         `❌ Vérification ARK impossible sur ${guild.name} :`,
         error
@@ -303,13 +332,15 @@ async function syncExistingArkMembers(
 }
 
 // ─────────────────────────────────────
-// MODULE PRINCIPAL
+// MODULE
 // ─────────────────────────────────────
 
 function startArkPlayerSpaces(
   client
 ) {
+
   if (!ARK_ROLE_ID) {
+
     console.error(
       '❌ ARK Player Spaces : ARK_ROLE_ID manquant.'
     );
@@ -322,7 +353,7 @@ function startArkPlayerSpaces(
   );
 
   // ─────────────────────────────
-  // RÔLE AJOUTÉ / RETIRÉ
+  // ATTRIBUTION / RETRAIT RÔLE
   // ─────────────────────────────
 
   client.on(
@@ -331,7 +362,9 @@ function startArkPlayerSpaces(
       oldMember,
       newMember
     ) => {
+
       try {
+
         const hadArkRole =
           oldMember.roles.cache.has(
             ARK_ROLE_ID
@@ -342,18 +375,24 @@ function startArkPlayerSpaces(
             ARK_ROLE_ID
           );
 
-        // Rôle ARK vient d'être ajouté
+        // ─────────────────────
+        // RÔLE AJOUTÉ
+        // ─────────────────────
+
         if (
           !hadArkRole &&
           hasArkRole
         ) {
+
           console.log('');
           console.log(
             '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
           );
+
           console.log(
             '🦖 RÔLE ARK ATTRIBUÉ'
           );
+
           console.log(
             '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
           );
@@ -367,24 +406,31 @@ function startArkPlayerSpaces(
           );
         }
 
-        // Pour le moment :
-        // si le rôle est retiré,
-        // on ne supprime pas la catégorie.
-        //
-        // Plus tard on pourra :
-        // - la verrouiller
-        // - l'archiver
-        // - ou la supprimer.
+        // ─────────────────────
+        // RÔLE RETIRÉ
+        // ─────────────────────
 
         if (
           hadArkRole &&
           !hasArkRole
         ) {
+
+          console.log('');
           console.log(
             `⚠️ Rôle ARK retiré à ${newMember.user.tag}`
           );
+
+          // Pour l'instant :
+          // on garde sa catégorie.
+          //
+          // On décidera ensuite si :
+          // - suppression
+          // - archivage
+          // - verrouillage
         }
+
       } catch (error) {
+
         console.error(
           '❌ Erreur ARK Player Spaces :',
           error
@@ -393,9 +439,9 @@ function startArkPlayerSpaces(
     }
   );
 
-  // Vérifie également les personnes
-  // qui possèdent déjà le rôle
-  // au démarrage du bot.
+  // Vérifie également les membres
+  // qui avaient déjà le rôle
+  // avant le démarrage du bot.
 
   syncExistingArkMembers(
     client
