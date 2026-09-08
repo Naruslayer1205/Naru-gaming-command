@@ -67,7 +67,8 @@ function findChannel(
     channel =>
       channel.parentId ===
         categoryId &&
-      channel.name === name
+      channel.name ===
+        name
   );
 }
 
@@ -80,25 +81,6 @@ async function sendHelpMessage(
   member
 ) {
   try {
-    const messages =
-      await channel.messages.fetch({
-        limit: 10
-      });
-
-    const alreadyExists =
-      messages.some(
-        message =>
-          message.author.id ===
-            channel.client.user.id &&
-          message.content.includes(
-            'Bienvenue dans ton espace ARK personnel'
-          )
-      );
-
-    if (alreadyExists) {
-      return;
-    }
-
     const message = [
       `👋 Bienvenue ${member} dans ton espace ARK personnel.`,
       '',
@@ -136,7 +118,7 @@ async function sendHelpMessage(
     );
 
     console.log(
-      `📨 Message d'aide envoyé pour ${member.user.tag}`
+      `📨 Message d'aide initial envoyé pour ${member.user.tag}`
     );
 
   } catch (error) {
@@ -172,6 +154,7 @@ async function createArkPlayerSpace(
   }
 
   // Le membre doit avoir le rôle ARK
+
   if (
     !member.roles.cache.has(
       ARK_ROLE_ID
@@ -239,6 +222,7 @@ async function createArkPlayerSpace(
     console.log(
       `🦖 Catégorie ARK créée pour ${member.user.tag}`
     );
+
   } else {
     const expectedName =
       getCategoryName(
@@ -280,6 +264,13 @@ async function createArkPlayerSpace(
         category.id,
         channelName
       );
+
+    let channelWasCreated =
+      false;
+
+    // ─────────────────────────
+    // LE SALON N'EXISTE PAS
+    // ─────────────────────────
 
     if (!channel) {
       channel =
@@ -328,6 +319,9 @@ async function createArkPlayerSpace(
           ]
         });
 
+      channelWasCreated =
+        true;
+
       console.log(
         `✅ Salon ${channelName} créé pour ${member.user.tag}`
       );
@@ -336,25 +330,27 @@ async function createArkPlayerSpace(
     createdChannels[
       channelName
     ] = channel;
-  }
 
-  // ─────────────────────────────
-  // MESSAGE DANS LE SALON AIDE
-  // ─────────────────────────────
+    // ─────────────────────────
+    // MESSAGE D'AIDE
+    // UNIQUEMENT À LA CRÉATION
+    // DU SALON
+    // ─────────────────────────
 
-  const helpChannel =
-    createdChannels[
-      '🆘・aide'
-    ];
-
-  if (helpChannel) {
-    await sendHelpMessage(
-      helpChannel,
-      member
-    );
+    if (
+      channelName ===
+        '🆘・aide' &&
+      channelWasCreated
+    ) {
+      await sendHelpMessage(
+        channel,
+        member
+      );
+    }
   }
 
   console.log('');
+
   console.log(
     `✅ Espace ARK prêt pour ${member.user.tag}`
   );
@@ -622,7 +618,12 @@ function startArkPlayerSpaces(
   );
 
   // Vérifie les membres ayant déjà
-  // le rôle ARK au démarrage
+  // le rôle ARK au démarrage.
+  //
+  // Si leur espace existe déjà,
+  // aucun nouveau salon n'est créé
+  // et aucun nouveau message d'aide
+  // n'est envoyé.
 
   syncExistingArkMembers(
     client
