@@ -90,10 +90,9 @@ function truncate(text, max) {
 }
 
 
-async function wait(ms) {
+function wait(ms) {
   return new Promise(
-    resolve =>
-      setTimeout(resolve, ms)
+    resolve => setTimeout(resolve, ms)
   );
 }
 
@@ -132,13 +131,12 @@ async function fetchPage(url) {
 
 
 // ======================================================
-// ANTI-DOUBLON
+// ETAT / ANTI DOUBLON
 // ======================================================
 
 function defaultState() {
   return {
     initialized: false,
-
     published: []
   };
 }
@@ -192,29 +190,27 @@ function loadState() {
 function saveState(state) {
   ensureDataFolder();
 
-  fs.writeFileSync(
-    config.stateFile,
+  try {
+    fs.writeFileSync(
+      config.stateFile,
 
-    JSON.stringify(
-      state,
-      null,
-      2
-    )
-  );
+      JSON.stringify(
+        state,
+        null,
+        2
+      )
+    );
+  } catch (error) {
+
+    console.log(
+      `⚠️ GTA : sauvegarde impossible : ${error.message}`
+    );
+  }
 }
 
 
 // ======================================================
 // GRAPHQL ROCKSTAR
-//
-// IMPORTANT :
-//
-// Rockstar accepte actuellement :
-// id
-// title
-// slug
-//
-// On ne demande RIEN D'AUTRE.
 // ======================================================
 
 async function fetchNewswirePage(page = 1) {
@@ -236,7 +232,7 @@ async function fetchNewswirePage(page = 1) {
         results {
           id
           title
-          slug
+          titleSlug
         }
       }
     }
@@ -295,7 +291,9 @@ async function fetchNewswirePage(page = 1) {
   try {
     data =
       JSON.parse(raw);
-  } catch {
+
+  } catch (error) {
+
     throw new Error(
       `Réponse GraphQL non JSON : ${raw.slice(0, 500)}`
     );
@@ -334,7 +332,10 @@ async function fetchNewswirePage(page = 1) {
         data,
         null,
         2
-      ).slice(0, 3000)
+      ).slice(
+        0,
+        3000
+      )
     );
 
     throw new Error(
@@ -422,7 +423,7 @@ function buildArticleUrl(article) {
   if (
     !article ||
     !article.id ||
-    !article.slug
+    !article.titleSlug
   ) {
     return null;
   }
@@ -432,7 +433,7 @@ function buildArticleUrl(article) {
     'https://www.rockstargames.com/newswire/article/' +
     article.id +
     '/' +
-    article.slug
+    article.titleSlug
   );
 }
 
@@ -442,7 +443,7 @@ function buildFrenchArticleUrl(article) {
   if (
     !article ||
     !article.id ||
-    !article.slug
+    !article.titleSlug
   ) {
     return null;
   }
@@ -452,7 +453,7 @@ function buildFrenchArticleUrl(article) {
     'https://www.rockstargames.com/fr/newswire/article/' +
     article.id +
     '/' +
-    article.slug
+    article.titleSlug
   );
 }
 
@@ -803,6 +804,11 @@ async function loadArticle(
 
 
   if (!englishUrl) {
+
+    console.log(
+      '⚠️ GTA : impossible de construire l’URL de l’article.'
+    );
+
     return null;
   }
 
@@ -812,10 +818,9 @@ async function loadArticle(
   );
 
 
-  // --------------------------------------------------
-  // On récupère d'abord la version anglaise pour
-  // identifier correctement GTA Online / GTA V.
-  // --------------------------------------------------
+  // ==================================================
+  // PAGE ANGLAISE
+  // ==================================================
 
   let englishHtml;
 
@@ -837,6 +842,10 @@ async function loadArticle(
   }
 
 
+  // ==================================================
+  // VERIFICATION GTA
+  // ==================================================
+
   if (
     !isGtaVOrOnline(
       englishHtml,
@@ -857,9 +866,9 @@ async function loadArticle(
   );
 
 
-  // --------------------------------------------------
-  // Version FR officielle Rockstar
-  // --------------------------------------------------
+  // ==================================================
+  // VERSION FRANCAISE ROCKSTAR
+  // ==================================================
 
   try {
 
@@ -882,8 +891,6 @@ async function loadArticle(
       );
 
 
-    // On vérifie qu'on n'est pas tombé sur une page
-    // générique/404 déguisée.
     if (
       frenchHtml.length > 1000 &&
       frenchTitle
@@ -937,9 +944,9 @@ async function loadArticle(
   }
 
 
-  // --------------------------------------------------
-  // Fallback traduction automatique
-  // --------------------------------------------------
+  // ==================================================
+  // FALLBACK TRADUCTION AUTOMATIQUE
+  // ==================================================
 
   console.log(
     '🇫🇷 GTA : traduction automatique.'
@@ -997,7 +1004,7 @@ async function loadArticle(
 
 
 // ======================================================
-// DATE FR
+// FORMAT DATE
 // ======================================================
 
 function formatDate(date) {
@@ -1155,9 +1162,6 @@ function createGtaEmbed(
 
 async function findRecentGtaArticles() {
 
-  // Page 1 du Newswire.
-  // Elle contient les publications les plus récentes.
-
   const posts =
     await fetchNewswirePage(
       1
@@ -1193,7 +1197,6 @@ async function findRecentGtaArticles() {
       }
 
 
-      // Petite pause entre les requêtes Rockstar.
       await wait(
         300
       );
@@ -1294,10 +1297,7 @@ async function checkGtaUpdates(
 
 
     // ==================================================
-    // PREMIERE INITIALISATION
-    //
-    // Tous les articles actuellement présents sont
-    // mémorisés afin de ne pas spammer Discord.
+    // PREMIER DEMARRAGE
     // ==================================================
 
     if (
@@ -1340,7 +1340,7 @@ async function checkGtaUpdates(
 
 
     // ==================================================
-    // NOUVELLES ACTUS
+    // NOUVELLES ACTUALITES
     // ==================================================
 
     const newArticles =
@@ -1370,9 +1370,11 @@ async function checkGtaUpdates(
     );
 
 
-    // On publie de la plus ancienne à la plus récente.
+    // Plus ancienne vers plus récente
     const ordered =
-      [...newArticles]
+      [
+        ...newArticles
+      ]
         .reverse();
 
 
@@ -1438,7 +1440,7 @@ async function checkGtaUpdates(
 
 
 // ======================================================
-// DEMARRAGE
+// DEMARRAGE MODULE GTA
 // ======================================================
 
 function startGtaUpdates(
@@ -1450,11 +1452,13 @@ function startGtaUpdates(
   );
 
 
+  // Premier contrôle au démarrage
   checkGtaUpdates(
     client
   );
 
 
+  // Puis toutes les 15 minutes
   if (!interval) {
 
     interval =
