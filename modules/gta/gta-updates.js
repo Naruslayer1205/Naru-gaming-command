@@ -88,39 +88,6 @@ function truncate(
 }
 
 
-async function fetchPage(url) {
-  const response =
-    await fetch(
-      url,
-      {
-        redirect: 'follow',
-
-        headers: {
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131 Safari/537.36',
-
-          'Accept':
-            'text/html,application/xhtml+xml,application/json',
-
-          'Accept-Language':
-            'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
-
-          'Cache-Control':
-            'no-cache'
-        }
-      }
-    );
-
-  if (!response.ok) {
-    throw new Error(
-      `HTTP ${response.status} sur ${url}`
-    );
-  }
-
-  return await response.text();
-}
-
-
 // ======================================================
 // ETAT / ANTI DOUBLON
 // ======================================================
@@ -205,402 +172,163 @@ function saveState(state) {
 
 
 // ======================================================
-// META HTML
+// GRAPHQL ROCKSTAR
 // ======================================================
 
-function getMeta(
-  html,
-  property
-) {
-  const escaped =
-    property.replace(
-      /[.*+?^${}()|[\]\\]/g,
-      '\\$&'
-    );
+async function fetchNewswireGraphQL() {
 
-  const patterns = [
-
-    new RegExp(
-      `<meta[^>]+property=["']${escaped}["'][^>]+content=["']([^"']*)["'][^>]*>`,
-      'i'
-    ),
-
-    new RegExp(
-      `<meta[^>]+content=["']([^"']*)["'][^>]+property=["']${escaped}["'][^>]*>`,
-      'i'
-    ),
-
-    new RegExp(
-      `<meta[^>]+name=["']${escaped}["'][^>]+content=["']([^"']*)["'][^>]*>`,
-      'i'
-    ),
-
-    new RegExp(
-      `<meta[^>]+content=["']([^"']*)["'][^>]+name=["']${escaped}["'][^>]*>`,
-      'i'
-    )
-
-  ];
-
-  for (
-    const pattern
-    of patterns
-  ) {
-    const match =
-      html.match(
-        pattern
-      );
-
-    if (
-      match &&
-      match[1]
-    ) {
-      return decodeHtml(
-        match[1]
-      );
-    }
-  }
-
-  return null;
-}
-
-
-// ======================================================
-// RECHERCHE DES ARTICLES DANS LES DONNEES DE LA PAGE
-// ======================================================
-
-function normalizeArticleUrl(url) {
-  if (!url) {
-    return null;
-  }
-
-  let clean =
-    decodeHtml(url);
-
-  clean =
-    clean
-      .replace(
-        /\\u002F/g,
-        '/'
-      )
-      .replace(
-        /\\\//g,
-        '/'
-      );
-
-  if (
-    clean.startsWith('//')
-  ) {
-    clean =
-      `https:${clean}`;
-  }
-
-  if (
-    clean.startsWith('/')
-  ) {
-    clean =
-      `https://www.rockstargames.com${clean}`;
-  }
-
-  if (
-    !clean.startsWith(
-      'http'
-    )
-  ) {
-    return null;
-  }
-
-  clean =
-    clean.replace(
-      'https://www.rockstargames.com/fr/newswire/article/',
-      'https://www.rockstargames.com/newswire/article/'
-    );
-
-  const queryIndex =
-    clean.indexOf('?');
-
-  if (
-    queryIndex !== -1
-  ) {
-    clean =
-      clean.slice(
-        0,
-        queryIndex
-      );
-  }
-
-  return clean;
-}
-
-
-function extractArticleUrls(html) {
-
-  const found =
-    new Set();
-
-
-  // ==================================================
-  // 1. LIENS HTML CLASSIQUES
-  // ==================================================
-
-  const hrefRegex =
-    /href=["']([^"']*\/newswire\/article\/[^"']+)["']/gi;
-
-  for (
-    const match
-    of html.matchAll(
-      hrefRegex
-    )
-  ) {
-    const url =
-      normalizeArticleUrl(
-        match[1]
-      );
-
-    if (url) {
-      found.add(url);
-    }
-  }
-
-
-  // ==================================================
-  // 2. URL ABSOLUES DANS LE JAVASCRIPT / JSON
-  // ==================================================
-
-  const absoluteRegex =
-    /https?:\\?\/\\?\/(?:www\.)?rockstargames\.com\\?\/(?:fr\\?\/)?newswire\\?\/article\\?\/[a-zA-Z0-9]+\\?\/[a-zA-Z0-9\-_%]+/gi;
-
-  for (
-    const match
-    of html.matchAll(
-      absoluteRegex
-    )
-  ) {
-    const url =
-      normalizeArticleUrl(
-        match[0]
-      );
-
-    if (url) {
-      found.add(url);
-    }
-  }
-
-
-  // ==================================================
-  // 3. URL RELATIVES DANS LES DONNEES JSON
-  // ==================================================
-
-  const relativeRegex =
-    /\\?\/(?:fr\\?\/)?newswire\\?\/article\\?\/[a-zA-Z0-9]+\\?\/[a-zA-Z0-9\-_%]+/gi;
-
-  for (
-    const match
-    of html.matchAll(
-      relativeRegex
-    )
-  ) {
-    const url =
-      normalizeArticleUrl(
-        match[0]
-      );
-
-    if (url) {
-      found.add(url);
-    }
-  }
-
-
-  return [
-    ...found
-  ];
-}
-
-
-// ======================================================
-// EXTRACTION ARTICLE
-// ======================================================
-
-function extractTitle(html) {
-
-  const metaTitle =
-    getMeta(
-      html,
-      'og:title'
-    );
-
-  if (metaTitle) {
-    return metaTitle
-      .replace(
-        /\s*-\s*Rockstar Games\s*$/i,
-        ''
-      )
-      .trim();
-  }
-
-
-  const h1 =
-    html.match(
-      /<h1[^>]*>([\s\S]*?)<\/h1>/i
-    );
-
-  if (
-    h1 &&
-    h1[1]
-  ) {
-    return stripHtml(
-      h1[1]
-    );
-  }
-
-
-  return (
-    'Nouvelle actualité GTA Online'
+  console.log(
+    '🌐 GTA : connexion au GraphQL Rockstar...'
   );
-}
+
+  const query = `
+    query NewswireList(
+      $locale: String!,
+      $page: Int!,
+      $pageSize: Int!
+    ) {
+      posts(
+        locale: $locale,
+        page: $page,
+        pageSize: $pageSize
+      ) {
+        results {
+          id
+          title
+          slug
+          url
+          excerpt
+          publishDate
+          category {
+            name
+          }
+          primaryImage {
+            url
+          }
+        }
+      }
+    }
+  `;
 
 
-function extractDescription(html) {
+  const body = {
+    query,
 
-  const description =
-    getMeta(
-      html,
-      'og:description'
-    ) ||
-    getMeta(
-      html,
-      'description'
+    variables: {
+      locale: 'en_us',
+      page: 1,
+      pageSize: 30
+    }
+  };
+
+
+  const response =
+    await fetch(
+      'https://graph.rockstargames.com/',
+      {
+        method: 'POST',
+
+        headers: {
+          'Content-Type':
+            'application/json',
+
+          'Origin':
+            'https://www.rockstargames.com',
+
+          'Referer':
+            'https://www.rockstargames.com/',
+
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+        },
+
+        body:
+          JSON.stringify(
+            body
+          )
+      }
     );
 
-  if (description) {
-    return stripHtml(
-      description
-    );
-  }
 
+  if (!response.ok) {
 
-  const paragraphs = [
-    ...html.matchAll(
-      /<p[^>]*>([\s\S]*?)<\/p>/gi
-    )
-  ];
-
-
-  for (
-    const paragraph
-    of paragraphs
-  ) {
     const text =
-      stripHtml(
-        paragraph[1]
-      );
+      await response.text();
 
-    if (
-      text.length >= 80
-    ) {
-      return text;
-    }
+    throw new Error(
+      `GraphQL HTTP ${response.status} : ${text.slice(0, 300)}`
+    );
   }
 
 
-  return (
-    'Une nouvelle actualité officielle GTA V / GTA Online vient d’être publiée par Rockstar Games.'
-  );
+  const data =
+    await response.json();
+
+
+  if (data.errors) {
+
+    console.log(
+      '❌ GTA GraphQL errors :',
+      JSON.stringify(
+        data.errors,
+        null,
+        2
+      )
+    );
+
+    throw new Error(
+      'Le GraphQL Rockstar a refusé la requête.'
+    );
+  }
+
+
+  return data;
 }
 
 
-function extractImage(html) {
+// ======================================================
+// EXTRACTION FLEXIBLE
+// ======================================================
 
-  return (
-    getMeta(
-      html,
-      'og:image'
-    ) ||
+function findPostArray(obj) {
 
-    getMeta(
-      html,
-      'twitter:image'
-    )
-  );
-}
-
-
-function extractPublishedDate(html) {
-
-  const published =
-    getMeta(
-      html,
-      'article:published_time'
-    );
-
-  if (published) {
-
-    const date =
-      new Date(
-        published
-      );
-
-    if (
-      !Number.isNaN(
-        date.getTime()
-      )
-    ) {
-      return date;
-    }
+  if (!obj) {
+    return null;
   }
 
 
-  const timeMatch =
-    html.match(
-      /<time[^>]+datetime=["']([^"']+)["']/i
-    );
-
-  if (
-    timeMatch &&
-    timeMatch[1]
-  ) {
-
-    const date =
-      new Date(
-        timeMatch[1]
-      );
+  if (Array.isArray(obj)) {
 
     if (
-      !Number.isNaN(
-        date.getTime()
-      )
+      obj.length > 0 &&
+      typeof obj[0] ===
+        'object'
     ) {
-      return date;
+      return obj;
     }
+
+    return null;
   }
 
 
-  const text =
-    stripHtml(
-      html
-    );
-
-
-  const dateMatch =
-    text.match(
-      /\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}\b/i
-    );
-
-
   if (
-    dateMatch
+    typeof obj !==
+    'object'
   ) {
-    const date =
-      new Date(
-        dateMatch[0]
-      );
+    return null;
+  }
 
-    if (
-      !Number.isNaN(
-        date.getTime()
-      )
-    ) {
-      return date;
+
+  for (
+    const value
+    of Object.values(obj)
+  ) {
+
+    const result =
+      findPostArray(value);
+
+    if (result) {
+      return result;
     }
   }
 
@@ -610,15 +338,59 @@ function extractPublishedDate(html) {
 
 
 // ======================================================
-// FILTRE GTA V / GTA ONLINE
+// DETECTION GTA
 // ======================================================
 
-function isGtaArticle(html) {
+function getArticleCategory(article) {
+
+  return (
+    article?.category?.name ||
+    article?.category ||
+    article?.game?.title ||
+    article?.game ||
+    ''
+  )
+    .toString()
+    .toLowerCase();
+}
+
+
+function getArticleTitle(article) {
+
+  return (
+    article.title ||
+    article.name ||
+    ''
+  )
+    .toString();
+}
+
+
+function getArticleText(article) {
+
+  return stripHtml(
+    [
+      getArticleTitle(article),
+
+      article.excerpt ||
+      article.description ||
+      article.summary ||
+      '',
+
+      getArticleCategory(article)
+    ]
+      .join(' ')
+  )
+    .toLowerCase();
+}
+
+
+function isGtaVOrOnline(article) {
 
   const text =
-    stripHtml(
-      html
-    ).toLowerCase();
+    getArticleText(
+      article
+    );
 
 
   const gtaOnline =
@@ -651,13 +423,11 @@ function isGtaArticle(html) {
     );
 
 
-  // GTA Online = accepté directement
   if (gtaOnline) {
     return true;
   }
 
 
-  // GTA V accepté seulement si ce n'est pas juste GTA VI
   if (
     gtaV &&
     !gtaVI
@@ -671,140 +441,146 @@ function isGtaArticle(html) {
 
 
 // ======================================================
-// VERSION FRANCAISE ROCKSTAR
+// URL ARTICLE
 // ======================================================
 
-function getFrenchUrl(url) {
+function buildArticleUrl(article) {
 
-  return url.replace(
-    'https://www.rockstargames.com/newswire/',
-    'https://www.rockstargames.com/fr/newswire/'
-  );
-}
-
-
-async function fetchArticle(url) {
-
-  let html;
-
-  let articleUrl =
-    url;
-
-  let language =
-    'en';
-
-
-  const frenchUrl =
-    getFrenchUrl(
-      url
-    );
-
-
-  // ==================================================
-  // VERSION FR ROCKSTAR EN PREMIER
-  // ==================================================
-
-  try {
-
-    const frenchHtml =
-      await fetchPage(
-        frenchUrl
-      );
-
-
-    if (
-      frenchHtml &&
-      frenchHtml.length >
-        1000
-    ) {
-
-      html =
-        frenchHtml;
-
-      articleUrl =
-        frenchUrl;
-
-      language =
-        'fr';
-    }
-
-  } catch (error) {
-
-    // pas grave
-  }
-
-
-  // ==================================================
-  // FALLBACK ANGLAIS
-  // ==================================================
-
-  if (!html) {
-
-    html =
-      await fetchPage(
-        url
-      );
-
-    articleUrl =
-      url;
-
-    language =
-      'en';
+  if (
+    article.url &&
+    article.url.startsWith(
+      'http'
+    )
+  ) {
+    return article.url;
   }
 
 
   if (
-    !isGtaArticle(
-      html
+    article.url &&
+    article.url.startsWith(
+      '/'
+    )
+  ) {
+    return (
+      'https://www.rockstargames.com' +
+      article.url
+    );
+  }
+
+
+  if (
+    article.id &&
+    article.slug
+  ) {
+    return (
+      'https://www.rockstargames.com/newswire/article/' +
+      article.id +
+      '/' +
+      article.slug
+    );
+  }
+
+
+  return null;
+}
+
+
+// ======================================================
+// IMAGE
+// ======================================================
+
+function getImage(article) {
+
+  return (
+    article?.primaryImage?.url ||
+    article?.image?.url ||
+    article?.image ||
+    article?.heroImage?.url ||
+    null
+  );
+}
+
+
+// ======================================================
+// DATE
+// ======================================================
+
+function getDate(article) {
+
+  const value =
+    article.publishDate ||
+    article.publishedAt ||
+    article.date ||
+    article.createdAt;
+
+
+  if (!value) {
+    return null;
+  }
+
+
+  const date =
+    new Date(
+      value
+    );
+
+
+  if (
+    Number.isNaN(
+      date.getTime()
     )
   ) {
     return null;
   }
 
 
-  return {
+  return date;
+}
 
-    canonicalUrl:
-      url,
 
-    url:
-      articleUrl,
+function formatDate(date) {
 
-    language,
+  if (!date) {
+    return (
+      'Date Rockstar non détectée'
+    );
+  }
 
-    title:
-      extractTitle(
-        html
-      ),
 
-    description:
-      extractDescription(
-        html
-      ),
+  return (
+    new Intl.DateTimeFormat(
+      'fr-FR',
+      {
+        day:
+          '2-digit',
 
-    image:
-      extractImage(
-        html
-      ),
+        month:
+          'long',
 
-    publishedAt:
-      extractPublishedDate(
-        html
+        year:
+          'numeric',
+
+        timeZone:
+          'Europe/Paris'
+      }
+    )
+      .format(
+        date
       )
-  };
+  );
 }
 
 
 // ======================================================
-// TRADUCTION FALLBACK
+// TRADUCTION
 // ======================================================
 
 async function translateText(text) {
 
   if (
     !text ||
-    text.length <
-      2
+    text.length < 2
   ) {
     return text;
   }
@@ -826,9 +602,7 @@ async function translateText(text) {
       );
 
 
-    if (
-      !response.ok
-    ) {
+    if (!response.ok) {
       return text;
     }
 
@@ -862,80 +636,95 @@ async function translateText(text) {
 }
 
 
-async function ensureFrench(article) {
+// ======================================================
+// CREATION ARTICLE
+// ======================================================
 
-  if (
-    article.language ===
-    'fr'
-  ) {
-    return article;
+async function normalizeArticle(
+  article
+) {
+
+  const url =
+    buildArticleUrl(
+      article
+    );
+
+
+  if (!url) {
+    return null;
   }
 
 
+  const title =
+    getArticleTitle(
+      article
+    );
+
+
+  const rawDescription =
+    stripHtml(
+      article.excerpt ||
+      article.description ||
+      article.summary ||
+      ''
+    );
+
+
   console.log(
-    '🇫🇷 GTA : traduction automatique...'
+    `🇫🇷 GTA : traduction de "${title}"...`
   );
 
 
-  return {
+  const translatedTitle =
+    await translateText(
+      title
+    );
 
-    ...article,
 
-    title:
-      await translateText(
-        truncate(
-          article.title,
-          450
+  const translatedDescription =
+    rawDescription
+      ? await translateText(
+          truncate(
+            rawDescription,
+            450
+          )
         )
+      : (
+          'Une nouvelle actualité officielle GTA Online vient d’être publiée par Rockstar Games.'
+        );
+
+
+  return {
+    canonicalUrl:
+      url,
+
+    url:
+      url.replace(
+        'https://www.rockstargames.com/newswire/',
+        'https://www.rockstargames.com/fr/newswire/'
       ),
 
+    title:
+      translatedTitle,
+
     description:
-      await translateText(
-        truncate(
-          article.description,
-          450
-        )
+      translatedDescription,
+
+    image:
+      getImage(
+        article
+      ),
+
+    publishedAt:
+      getDate(
+        article
       )
   };
 }
 
 
 // ======================================================
-// DATE
-// ======================================================
-
-function formatDate(date) {
-
-  if (!date) {
-    return (
-      'Date Rockstar non détectée'
-    );
-  }
-
-
-  return (
-    new Intl.DateTimeFormat(
-      'fr-FR',
-      {
-        day: '2-digit',
-
-        month: 'long',
-
-        year: 'numeric',
-
-        timeZone:
-          'Europe/Paris'
-      }
-    )
-      .format(
-        date
-      )
-  );
-}
-
-
-// ======================================================
-// EMBED GTA
+// EMBED
 // ======================================================
 
 function createGtaEmbed(
@@ -951,7 +740,7 @@ function createGtaEmbed(
 
       .setAuthor({
         name:
-          '🌴 GTA V • GTA ONLINE • NEWSWIRE'
+          '🌴 GRAND THEFT AUTO V • GTA ONLINE'
       })
 
       .setTitle(
@@ -1005,10 +794,7 @@ function createGtaEmbed(
             '🇫🇷 Langue',
 
           value:
-            article.language ===
-            'fr'
-              ? 'Version française Rockstar'
-              : 'Traduction française',
+            'Traduction française',
 
           inline:
             false
@@ -1059,136 +845,90 @@ function createGtaEmbed(
 
 async function findLatestGtaArticle() {
 
+  const data =
+    await fetchNewswireGraphQL();
+
+
   console.log(
-    '🌐 GTA : récupération du Rockstar Newswire...'
+    '📦 GTA : réponse GraphQL reçue.'
   );
 
 
-  const html =
-    await fetchPage(
-      config.newswireUrl
+  const articles =
+    findPostArray(
+      data?.data
     );
 
-
-  console.log(
-    `📄 GTA : ${html.length} caractères récupérés.`
-  );
-
-
-  let urls =
-    extractArticleUrls(
-      html
-    );
-
-
-  console.log(
-    `🔗 GTA : ${urls.length} lien(s) Newswire détecté(s).`
-  );
-
-
-  // ==================================================
-  // FALLBACK PAGE FR
-  // ==================================================
 
   if (
-    urls.length ===
-    0
+    !articles ||
+    articles.length === 0
   ) {
 
     console.log(
-      '🇫🇷 GTA : tentative sur le Newswire français...'
+      '📦 GTA GraphQL brut :',
+      JSON.stringify(
+        data,
+        null,
+        2
+      ).slice(
+        0,
+        3000
+      )
     );
 
-
-    try {
-
-      const frenchHtml =
-        await fetchPage(
-          'https://www.rockstargames.com/fr/newswire'
-        );
-
-
-      urls =
-        extractArticleUrls(
-          frenchHtml
-        );
-
-
-      console.log(
-        `🔗 GTA FR : ${urls.length} lien(s) détecté(s).`
-      );
-
-    } catch (error) {
-
-      console.log(
-        `⚠️ GTA FR : ${error.message}`
-      );
-    }
-  }
-
-
-  if (
-    urls.length ===
-    0
-  ) {
 
     throw new Error(
-      'Aucun lien Newswire détecté dans les données Rockstar.'
+      'Aucun article trouvé dans la réponse GraphQL Rockstar.'
     );
   }
-
-
-  urls =
-    urls.slice(
-      0,
-      config.maxCandidates ||
-      25
-    );
 
 
   console.log(
-    `🔎 GTA : analyse de ${urls.length} article(s)...`
+    `📰 GTA : ${articles.length} article(s) Rockstar reçu(s).`
   );
 
 
   for (
-    const url
-    of urls
+    const article
+    of articles
   ) {
 
-    try {
-
-      console.log(
-        `🔎 GTA : ${url}`
+    const title =
+      getArticleTitle(
+        article
       );
 
 
-      const article =
-        await fetchArticle(
-          url
-        );
+    console.log(
+      `🔎 GTA : ${title}`
+    );
 
 
-      if (article) {
-
-        console.log(
-          `✅ GTA détecté : ${article.title}`
-        );
-
-        return article;
-      }
-
+    if (
+      !isGtaVOrOnline(
+        article
+      )
+    ) {
 
       console.log(
-        '⏭️ GTA : article non GTA V / Online ignoré.'
+        '⏭️ GTA : hors GTA V / GTA Online.'
       );
 
-    } catch (error) {
-
-      console.log(
-        `⚠️ GTA : article inaccessible : ${error.message}`
-      );
+      continue;
     }
+
+
+    console.log(
+      `✅ GTA Online détecté : ${title}`
+    );
+
+
+    return (
+      await normalizeArticle(
+        article
+      )
+    );
   }
 
 
@@ -1271,7 +1011,7 @@ async function checkGtaUpdates(
 
 
     // ==================================================
-    // PREMIER LANCEMENT
+    // PREMIER DEMARRAGE
     // ==================================================
 
     if (
@@ -1281,8 +1021,10 @@ async function checkGtaUpdates(
       state.initialized =
         true;
 
+
       state.lastArticleUrl =
         latest.canonicalUrl;
+
 
       state.published =
         [
@@ -1299,16 +1041,18 @@ async function checkGtaUpdates(
         `✅ GTA initialisé sur : ${latest.title}`
       );
 
+
       console.log(
-        'ℹ️ GTA : première initialisation, aucune ancienne actualité envoyée.'
+        'ℹ️ GTA : aucune ancienne actualité envoyée.'
       );
+
 
       return;
     }
 
 
     // ==================================================
-    // DEJA PUBLIE
+    // ANTI DOUBLON
     // ==================================================
 
     if (
@@ -1324,22 +1068,13 @@ async function checkGtaUpdates(
         `✅ GTA : "${latest.title}" déjà publiée.`
       );
 
+
       return;
     }
 
 
     // ==================================================
-    // TRADUCTION
-    // ==================================================
-
-    const frenchArticle =
-      await ensureFrench(
-        latest
-      );
-
-
-    // ==================================================
-    // PUBLICATION DISCORD
+    // ENVOI
     // ==================================================
 
     await channel.send({
@@ -1347,7 +1082,7 @@ async function checkGtaUpdates(
       embeds: [
 
         createGtaEmbed(
-          frenchArticle
+          latest
         )
 
       ]
@@ -1355,7 +1090,7 @@ async function checkGtaUpdates(
 
 
     console.log(
-      `📢 GTA : "${frenchArticle.title}" publiée !`
+      `📢 GTA : "${latest.title}" publiée !`
     );
 
 
@@ -1388,6 +1123,7 @@ async function checkGtaUpdates(
       state
     );
 
+
   } catch (error) {
 
     console.error(
@@ -1403,7 +1139,7 @@ async function checkGtaUpdates(
 
 
 // ======================================================
-// DEMARRAGE MODULE
+// DEMARRAGE
 // ======================================================
 
 function startGtaUpdates(
@@ -1415,13 +1151,11 @@ function startGtaUpdates(
   );
 
 
-  // Vérification au démarrage
   checkGtaUpdates(
     client
   );
 
 
-  // Vérification toutes les 15 minutes
   if (!interval) {
 
     interval =
