@@ -10,7 +10,7 @@ const CATEGORY_PREFIX =
   '🦖 ARK — ';
 
 // ─────────────────────────────────────
-// NOM CATÉGORIE
+// NOM DE LA CATÉGORIE
 // ─────────────────────────────────────
 
 function getCategoryName(member) {
@@ -18,7 +18,7 @@ function getCategoryName(member) {
 }
 
 // ─────────────────────────────────────
-// TROUVER CATÉGORIE JOUEUR
+// TROUVER LA CATÉGORIE DU JOUEUR
 // ─────────────────────────────────────
 
 function findPlayerCategory(
@@ -27,7 +27,6 @@ function findPlayerCategory(
 ) {
   return guild.channels.cache.find(
     channel => {
-
       if (
         channel.type !==
         ChannelType.GuildCategory
@@ -56,7 +55,7 @@ function findPlayerCategory(
 }
 
 // ─────────────────────────────────────
-// TROUVER SALON
+// TROUVER UN SALON
 // ─────────────────────────────────────
 
 function findChannel(
@@ -73,7 +72,7 @@ function findChannel(
 }
 
 // ─────────────────────────────────────
-// CRÉATION ESPACE ARK
+// CRÉER L'ESPACE ARK
 // ─────────────────────────────────────
 
 async function createArkPlayerSpace(
@@ -90,12 +89,13 @@ async function createArkPlayerSpace(
     return null;
   }
 
-  // Ignore les bots
-  if (member.user.bot) {
+  if (
+    member.user.bot
+  ) {
     return null;
   }
 
-  // Doit avoir le rôle ARK
+  // Le membre doit avoir le rôle ARK
   if (
     !member.roles.cache.has(
       ARK_ROLE_ID
@@ -115,7 +115,6 @@ async function createArkPlayerSpace(
     );
 
   if (!category) {
-
     category =
       await guild.channels.create({
         name:
@@ -165,10 +164,6 @@ async function createArkPlayerSpace(
       `🦖 Catégorie ARK créée pour ${member.user.tag}`
     );
   } else {
-
-    // Si le joueur change son pseudo Discord,
-    // on met le nom de catégorie à jour.
-
     const expectedName =
       getCategoryName(
         member
@@ -185,7 +180,7 @@ async function createArkPlayerSpace(
   }
 
   // ─────────────────────────────
-  // SALONS À CRÉER
+  // SALONS
   // ─────────────────────────────
 
   const channels = [
@@ -202,7 +197,6 @@ async function createArkPlayerSpace(
     const channelName
     of channels
   ) {
-
     let channel =
       findChannel(
         guild,
@@ -211,7 +205,6 @@ async function createArkPlayerSpace(
       );
 
     if (!channel) {
-
       channel =
         await guild.channels.create({
           name:
@@ -280,7 +273,108 @@ async function createArkPlayerSpace(
 }
 
 // ─────────────────────────────────────
-// MEMBRES AYANT DÉJÀ LE RÔLE
+// SUPPRIMER L'ESPACE ARK
+// ─────────────────────────────────────
+
+async function deleteArkPlayerSpace(
+  member
+) {
+  const guild =
+    member.guild;
+
+  const category =
+    findPlayerCategory(
+      guild,
+      member.id
+    );
+
+  if (!category) {
+    console.log(
+      `ℹ️ Aucun espace ARK trouvé pour ${member.user.tag}`
+    );
+
+    return;
+  }
+
+  console.log('');
+  console.log(
+    '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+  );
+
+  console.log(
+    '🗑️ SUPPRESSION ESPACE ARK'
+  );
+
+  console.log(
+    '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+  );
+
+  console.log(
+    `👤 ${member.user.tag}`
+  );
+
+  // ─────────────────────────────
+  // SUPPRIMER LES SALONS
+  // ─────────────────────────────
+
+  const childChannels =
+    guild.channels.cache.filter(
+      channel =>
+        channel.parentId ===
+        category.id
+    );
+
+  for (
+    const channel
+    of childChannels.values()
+  ) {
+    try {
+      const channelName =
+        channel.name;
+
+      await channel.delete(
+        'Rôle ARK retiré'
+      );
+
+      console.log(
+        `🗑️ Salon supprimé : ${channelName}`
+      );
+
+    } catch (error) {
+      console.error(
+        `❌ Impossible de supprimer le salon ${channel.name} :`,
+        error
+      );
+    }
+  }
+
+  // ─────────────────────────────
+  // SUPPRIMER LA CATÉGORIE
+  // ─────────────────────────────
+
+  try {
+    await category.delete(
+      'Rôle ARK retiré'
+    );
+
+    console.log(
+      `🗑️ Catégorie ARK supprimée pour ${member.user.tag}`
+    );
+
+  } catch (error) {
+    console.error(
+      '❌ Impossible de supprimer la catégorie ARK :',
+      error
+    );
+  }
+
+  console.log(
+    `✅ Espace ARK supprimé pour ${member.user.tag}`
+  );
+}
+
+// ─────────────────────────────────────
+// SYNCHRONISER LES MEMBRES EXISTANTS
 // ─────────────────────────────────────
 
 async function syncExistingArkMembers(
@@ -294,9 +388,7 @@ async function syncExistingArkMembers(
     const guild
     of client.guilds.cache.values()
   ) {
-
     try {
-
       await guild.members.fetch();
 
       const members =
@@ -322,7 +414,6 @@ async function syncExistingArkMembers(
       }
 
     } catch (error) {
-
       console.error(
         `❌ Vérification ARK impossible sur ${guild.name} :`,
         error
@@ -332,15 +423,13 @@ async function syncExistingArkMembers(
 }
 
 // ─────────────────────────────────────
-// MODULE
+// MODULE PRINCIPAL
 // ─────────────────────────────────────
 
 function startArkPlayerSpaces(
   client
 ) {
-
   if (!ARK_ROLE_ID) {
-
     console.error(
       '❌ ARK Player Spaces : ARK_ROLE_ID manquant.'
     );
@@ -352,19 +441,13 @@ function startArkPlayerSpaces(
     '🦖 ARK Player Spaces : module chargé'
   );
 
-  // ─────────────────────────────
-  // ATTRIBUTION / RETRAIT RÔLE
-  // ─────────────────────────────
-
   client.on(
     'guildMemberUpdate',
     async (
       oldMember,
       newMember
     ) => {
-
       try {
-
         const hadArkRole =
           oldMember.roles.cache.has(
             ARK_ROLE_ID
@@ -376,14 +459,13 @@ function startArkPlayerSpaces(
           );
 
         // ─────────────────────
-        // RÔLE AJOUTÉ
+        // RÔLE ARK AJOUTÉ
         // ─────────────────────
 
         if (
           !hadArkRole &&
           hasArkRole
         ) {
-
           console.log('');
           console.log(
             '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
@@ -407,30 +489,36 @@ function startArkPlayerSpaces(
         }
 
         // ─────────────────────
-        // RÔLE RETIRÉ
+        // RÔLE ARK RETIRÉ
         // ─────────────────────
 
         if (
           hadArkRole &&
           !hasArkRole
         ) {
-
           console.log('');
           console.log(
-            `⚠️ Rôle ARK retiré à ${newMember.user.tag}`
+            '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
           );
 
-          // Pour l'instant :
-          // on garde sa catégorie.
-          //
-          // On décidera ensuite si :
-          // - suppression
-          // - archivage
-          // - verrouillage
+          console.log(
+            '⚠️ RÔLE ARK RETIRÉ'
+          );
+
+          console.log(
+            '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+          );
+
+          console.log(
+            `👤 ${newMember.user.tag}`
+          );
+
+          await deleteArkPlayerSpace(
+            newMember
+          );
         }
 
       } catch (error) {
-
         console.error(
           '❌ Erreur ARK Player Spaces :',
           error
@@ -439,9 +527,8 @@ function startArkPlayerSpaces(
     }
   );
 
-  // Vérifie également les membres
-  // qui avaient déjà le rôle
-  // avant le démarrage du bot.
+  // Vérifie les membres ayant déjà
+  // le rôle ARK au démarrage
 
   syncExistingArkMembers(
     client
@@ -451,5 +538,6 @@ function startArkPlayerSpaces(
 module.exports = {
   startArkPlayerSpaces,
   createArkPlayerSpace,
+  deleteArkPlayerSpace,
   findPlayerCategory
 };
