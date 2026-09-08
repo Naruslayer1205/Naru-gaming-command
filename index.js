@@ -5,54 +5,123 @@ const {
   ActivityType
 } = require('discord.js');
 
-const startArkUpdates = require('./modules/ark/ark-updates');
-const startArkBridge = require('./modules/ark/ark-bridge');
+const startArkUpdates =
+  require('./modules/ark/ark-updates');
 
-const startGtaUpdates = require('./modules/gta/gta-updates');
+const startArkBridge =
+  require('./modules/ark/ark-bridge');
+
+const {
+  startArkPlayerSpaces
+} =
+  require('./modules/ark/player-spaces');
+
+const startGtaUpdates =
+  require('./modules/gta/gta-updates');
 
 const client = new Client({
   intents: [
-    GatewayIntentBits.Guilds
+    GatewayIntentBits.Guilds,
+
+    // Nécessaire pour détecter
+    // les changements de rôles.
+    GatewayIntentBits.GuildMembers
   ]
 });
 
 client.once(
   Events.ClientReady,
   async readyClient => {
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('🎮 NARU GAMING COMMAND');
-    console.log(`✅ Connecté en tant que ${readyClient.user.tag}`);
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log(
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+    );
+
+    console.log(
+      '🎮 NARU GAMING COMMAND'
+    );
+
+    console.log(
+      `✅ Connecté en tant que ${readyClient.user.tag}`
+    );
+
+    console.log(
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+    );
 
     readyClient.user.setActivity({
-      name: 'Naru Gaming Command',
-      type: ActivityType.Watching
+      name:
+        'Naru Gaming Command',
+
+      type:
+        ActivityType.Watching
     });
 
+    // ─────────────────────────────
     // ARK
-    startArkUpdates(readyClient);
-    startArkBridge(readyClient);
+    // ─────────────────────────────
 
+    startArkUpdates(
+      readyClient
+    );
+
+    startArkBridge(
+      readyClient
+    );
+
+    startArkPlayerSpaces(
+      readyClient
+    );
+
+    // ─────────────────────────────
     // GTA
-    startGtaUpdates(readyClient);
+    // ─────────────────────────────
+
+    startGtaUpdates(
+      readyClient
+    );
   }
 );
 
-client.on('error', error => {
-  console.error('❌ Erreur Discord :', error);
-});
+client.on(
+  'error',
+  error => {
+    console.error(
+      '❌ Erreur Discord :',
+      error
+    );
+  }
+);
 
-process.on('unhandledRejection', error => {
-  console.error('❌ Promesse rejetée :', error);
-});
+process.on(
+  'unhandledRejection',
+  error => {
+    console.error(
+      '❌ Promesse rejetée :',
+      error
+    );
+  }
+);
 
-process.on('uncaughtException', error => {
-  console.error('❌ Exception non gérée :', error);
-});
+process.on(
+  'uncaughtException',
+  error => {
+    console.error(
+      '❌ Exception non gérée :',
+      error
+    );
+  }
+);
 
-if (!process.env.DISCORD_TOKEN) {
-  console.error('❌ Variable DISCORD_TOKEN manquante.');
+if (
+  !process.env.DISCORD_TOKEN
+) {
+  console.error(
+    '❌ Variable DISCORD_TOKEN manquante.'
+  );
+
   process.exit(1);
 }
 
-client.login(process.env.DISCORD_TOKEN);
+client.login(
+  process.env.DISCORD_TOKEN
+);
