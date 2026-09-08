@@ -72,6 +72,82 @@ function findChannel(
 }
 
 // ─────────────────────────────────────
+// MESSAGE D'AIDE
+// ─────────────────────────────────────
+
+async function sendHelpMessage(
+  channel,
+  member
+) {
+  try {
+    const messages =
+      await channel.messages.fetch({
+        limit: 10
+      });
+
+    const alreadyExists =
+      messages.some(
+        message =>
+          message.author.id ===
+            channel.client.user.id &&
+          message.content.includes(
+            'Bienvenue dans ton espace ARK personnel'
+          )
+      );
+
+    if (alreadyExists) {
+      return;
+    }
+
+    const message = [
+      `👋 Bienvenue ${member} dans ton espace ARK personnel.`,
+      '',
+      'Cet espace est privé et te permet de retrouver toutes les informations envoyées par **Naru Gaming Command** depuis ton jeu ARK.',
+      '',
+      'Voici à quoi correspondent les différents salons :',
+      '',
+      '👤 **・personnage**',
+      'Tes informations de personnage : nom, niveau, expérience, tribu, statistiques, position et autres données récupérables.',
+      '',
+      '🌍 **・monde**',
+      'Les informations concernant ta partie et ta map : monde actuel, sauvegarde, structures, heure, données générales et autres informations disponibles.',
+      '',
+      '🦕 **・dinos**',
+      'Les informations concernant tes dinos apprivoisés : espèce, nom, niveau, sexe, statistiques, imprint, mutations, reproduction, propriétaire, position et autres données disponibles.',
+      '',
+      '💀 **・journal**',
+      'Ton journal ARK. Il pourra afficher certains événements importants détectés pendant ta partie.',
+      '',
+      '⚙️ **・commandes**',
+      'Le statut de ton Naru ARK Bridge, les synchronisations et les futures commandes disponibles.',
+      '',
+      '🆘 **・aide**',
+      'Ce salon est prévu si tu rencontres un problème avec ton espace ARK, le Bridge, tes données ou si tu as besoin de l’aide d’un membre du staff.',
+      '',
+      'Tu peux simplement expliquer ton problème ici et un membre du staff pourra venir t’aider.',
+      '',
+      '⚠️ Pense à laisser **Naru ARK Bridge Client** ouvert sur ton PC lorsque tu joues afin que tes informations puissent être synchronisées.',
+      '',
+      '🦖 **Naru Gaming Command — ARK Game Bridge**'
+    ].join('\n');
+
+    await channel.send(
+      message
+    );
+
+    console.log(
+      `📨 Message d'aide envoyé pour ${member.user.tag}`
+    );
+
+  } catch (error) {
+    console.error(
+      `❌ Impossible d'envoyer le message d'aide pour ${member.user.tag} :`,
+      error
+    );
+  }
+}
+
+// ─────────────────────────────────────
 // CRÉER L'ESPACE ARK
 // ─────────────────────────────────────
 
@@ -188,7 +264,8 @@ async function createArkPlayerSpace(
     '🌍・monde',
     '🦕・dinos',
     '💀・journal',
-    '⚙️・commandes'
+    '⚙️・commandes',
+    '🆘・aide'
   ];
 
   const createdChannels = {};
@@ -232,7 +309,8 @@ async function createArkPlayerSpace(
 
               allow: [
                 PermissionFlagsBits.ViewChannel,
-                PermissionFlagsBits.ReadMessageHistory
+                PermissionFlagsBits.ReadMessageHistory,
+                PermissionFlagsBits.SendMessages
               ]
             },
 
@@ -258,6 +336,22 @@ async function createArkPlayerSpace(
     createdChannels[
       channelName
     ] = channel;
+  }
+
+  // ─────────────────────────────
+  // MESSAGE DANS LE SALON AIDE
+  // ─────────────────────────────
+
+  const helpChannel =
+    createdChannels[
+      '🆘・aide'
+    ];
+
+  if (helpChannel) {
+    await sendHelpMessage(
+      helpChannel,
+      member
+    );
   }
 
   console.log('');
