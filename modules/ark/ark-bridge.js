@@ -8,6 +8,10 @@ const {
   findPlayerCategory
 } = require('./player-spaces');
 
+const {
+  updateChallengeChannel
+} = require('./ark-challenge-system');
+
 const PORT =
   Number(
     process.env.ARK_BRIDGE_PORT
@@ -36,6 +40,9 @@ const CHANNELS = {
 
   dinos:
     '🦕・dinos',
+
+  challenges:
+    '🎯・défis',
 
   journal:
     '💀・journal',
@@ -538,6 +545,13 @@ async function updateArkDiscord(
       CHANNELS.dinos
     );
 
+  const challenges =
+    getChannel(
+      guild,
+      category,
+      CHANNELS.challenges
+    );
+
   const journal =
     getChannel(
       guild,
@@ -599,6 +613,26 @@ async function updateArkDiscord(
         state
       )
     );
+  }
+
+  if (
+    challenges
+  ) {
+    const challengeMetrics =
+      state.ark
+        ?.challengeMetrics ||
+      null;
+
+    if (
+      challengeMetrics
+    ) {
+      await updateChallengeChannel(
+        client,
+        member,
+        category,
+        challengeMetrics
+      );
+    }
   }
 
   if (journal) {
