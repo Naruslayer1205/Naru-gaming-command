@@ -24,12 +24,14 @@ const {
 } =
   require('./modules/gta/player-spaces');
 
+const {
+  startGtaLink
+} =
+  require('./modules/gta/gta-link');
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-
-    // Nécessaire pour détecter
-    // les changements de rôles.
     GatewayIntentBits.GuildMembers
   ]
 });
@@ -86,6 +88,10 @@ client.once(
     );
 
     startGtaPlayerSpaces(
+      readyClient
+    );
+
+    startGtaLink(
       readyClient
     );
   }
