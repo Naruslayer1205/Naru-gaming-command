@@ -152,8 +152,6 @@ async function createGtaPlayerSpace(
     return null;
   }
 
-  // Le membre doit avoir le rôle GTA V
-
   if (
     !member.roles.cache.has(
       GTA_ROLE_ID
@@ -268,10 +266,6 @@ async function createGtaPlayerSpace(
     let channelWasCreated =
       false;
 
-    // ─────────────────────────
-    // LE SALON N'EXISTE PAS
-    // ─────────────────────────
-
     if (!channel) {
       channel =
         await guild.channels.create({
@@ -331,11 +325,8 @@ async function createGtaPlayerSpace(
       channelName
     ] = channel;
 
-    // ─────────────────────────
-    // MESSAGE D'AIDE
-    // UNIQUEMENT À LA CRÉATION
-    // DU SALON
-    // ─────────────────────────
+    // Message envoyé UNE SEULE FOIS
+    // lors de la création du salon aide.
 
     if (
       channelName ===
@@ -348,8 +339,6 @@ async function createGtaPlayerSpace(
       );
     }
   }
-
-  console.log('');
 
   console.log(
     `✅ Espace GTA V prêt pour ${member.user.tag}`
@@ -403,10 +392,6 @@ async function deleteGtaPlayerSpace(
     `👤 ${member.user.tag}`
   );
 
-  // ─────────────────────────────
-  // SUPPRIMER LES SALONS
-  // ─────────────────────────────
-
   const childChannels =
     guild.channels.cache.filter(
       channel =>
@@ -427,20 +412,16 @@ async function deleteGtaPlayerSpace(
       );
 
       console.log(
-        `🗑️ Salon supprimé : ${channelName}`
+        `🗑️ Salon GTA V supprimé : ${channelName}`
       );
 
     } catch (error) {
       console.error(
-        `❌ Impossible de supprimer le salon ${channel.name} :`,
+        `❌ Impossible de supprimer le salon GTA V ${channel.name} :`,
         error
       );
     }
   }
-
-  // ─────────────────────────────
-  // SUPPRIMER LA CATÉGORIE
-  // ─────────────────────────────
 
   try {
     await category.delete(
@@ -465,6 +446,7 @@ async function deleteGtaPlayerSpace(
 
 // ─────────────────────────────────────
 // SYNCHRONISER LES MEMBRES EXISTANTS
+// SANS REQUÊTE DISCORD
 // ─────────────────────────────────────
 
 async function syncExistingGtaMembers(
@@ -475,7 +457,12 @@ async function syncExistingGtaMembers(
     of client.guilds.cache.values()
   ) {
     try {
-      await guild.members.fetch();
+      // IMPORTANT :
+      // On ne fait PAS guild.members.fetch().
+      //
+      // ARK effectue déjà cette requête.
+      // GTA utilise uniquement le cache
+      // pour éviter les GatewayRateLimitError.
 
       const members =
         guild.members.cache.filter(
@@ -487,7 +474,7 @@ async function syncExistingGtaMembers(
         );
 
       console.log(
-        `🚘 ${members.size} membre(s) avec le rôle GTA V sur ${guild.name}`
+        `🚘 ${members.size} membre(s) GTA V détecté(s) dans le cache sur ${guild.name}`
       );
 
       for (
@@ -519,6 +506,10 @@ function startGtaPlayerSpaces(
     '🚘 GTA V Player Spaces : module chargé'
   );
 
+  // ─────────────────────────────
+  // CHANGEMENTS DE RÔLES
+  // ─────────────────────────────
+
   client.on(
     'guildMemberUpdate',
     async (
@@ -536,9 +527,7 @@ function startGtaPlayerSpaces(
             GTA_ROLE_ID
           );
 
-        // ─────────────────────
         // RÔLE GTA V AJOUTÉ
-        // ─────────────────────
 
         if (
           !hadGtaRole &&
@@ -566,9 +555,7 @@ function startGtaPlayerSpaces(
           );
         }
 
-        // ─────────────────────
         // RÔLE GTA V RETIRÉ
-        // ─────────────────────
 
         if (
           hadGtaRole &&
@@ -605,16 +592,44 @@ function startGtaPlayerSpaces(
     }
   );
 
-  // Vérifie les membres ayant déjà
-  // le rôle GTA V au démarrage.
+  // ─────────────────────────────
+  // SYNCHRONISATION AU DÉMARRAGE
+  // ─────────────────────────────
   //
-  // Si leur espace existe déjà,
-  // aucun nouveau salon n'est créé
-  // et aucun nouveau message d'aide
-  // n'est envoyé.
+  // Première vérification immédiate
+  // avec ce qui est déjà en cache.
 
   syncExistingGtaMembers(
     client
+  );
+
+  // Deuxième vérification locale.
+  //
+  // Cela laisse le temps au module ARK
+  // de remplir le cache des membres.
+  //
+  // AUCUNE nouvelle requête Discord.
+
+  setTimeout(
+    () => {
+      syncExistingGtaMembers(
+        client
+      );
+    },
+    5000
+  );
+
+  // Dernière vérification de sécurité.
+  //
+  // Toujours uniquement dans le cache.
+
+  setTimeout(
+    () => {
+      syncExistingGtaMembers(
+        client
+      );
+    },
+    15000
   );
 }
 
