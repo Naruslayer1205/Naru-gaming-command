@@ -97,6 +97,9 @@ async function sendHelpMessage(
       '🦕 **・dinos**',
       'Les informations concernant tes dinos apprivoisés : espèce, nom, niveau, sexe, statistiques, imprint, mutations, reproduction, propriétaire, position et autres données disponibles.',
       '',
+      '🎯 **・défis**',
+      'Tes 3 défis ARK quotidiens : 1 facile, 1 moyen et 1 difficile. Leur progression est suivie automatiquement par ton Naru ARK Bridge.',
+      '',
       '💀 **・journal**',
       'Ton journal ARK. Il pourra afficher certains événements importants détectés pendant ta partie.',
       '',
@@ -152,8 +155,6 @@ async function createArkPlayerSpace(
   ) {
     return null;
   }
-
-  // Le membre doit avoir le rôle ARK
 
   if (
     !member.roles.cache.has(
@@ -247,6 +248,7 @@ async function createArkPlayerSpace(
     '👤・personnage',
     '🌍・monde',
     '🦕・dinos',
+    '🎯・défis',
     '💀・journal',
     '⚙️・commandes',
     '🆘・aide'
@@ -267,10 +269,6 @@ async function createArkPlayerSpace(
 
     let channelWasCreated =
       false;
-
-    // ─────────────────────────
-    // LE SALON N'EXISTE PAS
-    // ─────────────────────────
 
     if (!channel) {
       channel =
@@ -330,12 +328,6 @@ async function createArkPlayerSpace(
     createdChannels[
       channelName
     ] = channel;
-
-    // ─────────────────────────
-    // MESSAGE D'AIDE
-    // UNIQUEMENT À LA CRÉATION
-    // DU SALON
-    // ─────────────────────────
 
     if (
       channelName ===
@@ -403,10 +395,6 @@ async function deleteArkPlayerSpace(
     `👤 ${member.user.tag}`
   );
 
-  // ─────────────────────────────
-  // SUPPRIMER LES SALONS
-  // ─────────────────────────────
-
   const childChannels =
     guild.channels.cache.filter(
       channel =>
@@ -437,10 +425,6 @@ async function deleteArkPlayerSpace(
       );
     }
   }
-
-  // ─────────────────────────────
-  // SUPPRIMER LA CATÉGORIE
-  // ─────────────────────────────
 
   try {
     await category.delete(
@@ -548,10 +532,6 @@ function startArkPlayerSpaces(
             ARK_ROLE_ID
           );
 
-        // ─────────────────────
-        // RÔLE ARK AJOUTÉ
-        // ─────────────────────
-
         if (
           !hadArkRole &&
           hasArkRole
@@ -577,10 +557,6 @@ function startArkPlayerSpaces(
             newMember
           );
         }
-
-        // ─────────────────────
-        // RÔLE ARK RETIRÉ
-        // ─────────────────────
 
         if (
           hadArkRole &&
@@ -616,14 +592,6 @@ function startArkPlayerSpaces(
       }
     }
   );
-
-  // Vérifie les membres ayant déjà
-  // le rôle ARK au démarrage.
-  //
-  // Si leur espace existe déjà,
-  // aucun nouveau salon n'est créé
-  // et aucun nouveau message d'aide
-  // n'est envoyé.
 
   syncExistingArkMembers(
     client
