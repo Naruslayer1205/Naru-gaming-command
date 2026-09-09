@@ -104,6 +104,9 @@ async function sendHelpMessage(
       '📊 **・statistiques**',
       'Tes statistiques GTA V récupérées par le Bridge : temps de jeu, distance parcourue, véhicules utilisés et autres statistiques disponibles.',
       '',
+      '🎯 **・défis**',
+      'Tes 3 défis GTA V quotidiens : 1 facile, 1 moyen et 1 difficile. La progression est détectée automatiquement par le Bridge et rapporte des points au classement mensuel.',
+      '',
       '📜 **・journal**',
       'Ton journal GTA V. Il pourra afficher certains événements importants détectés pendant ta partie.',
       '',
@@ -245,6 +248,7 @@ async function createGtaPlayerSpace(
     '📍・position',
     '🚗・vehicule',
     '📊・statistiques',
+    '🎯・défis',
     '📜・journal',
     '⚙️・commandes',
     '🆘・aide'
