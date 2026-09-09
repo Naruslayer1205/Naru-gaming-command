@@ -25,6 +25,11 @@ const {
   require('./modules/gta/player-spaces');
 
 const {
+  startGtaChallenges
+} =
+  require('./modules/gta/gta-challenges');
+
+const {
   startGtaLink
 } =
   require('./modules/gta/gta-link');
@@ -88,6 +93,10 @@ client.once(
     );
 
     startGtaPlayerSpaces(
+      readyClient
+    );
+
+    startGtaChallenges(
       readyClient
     );
 
