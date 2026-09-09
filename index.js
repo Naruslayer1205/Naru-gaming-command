@@ -19,6 +19,11 @@ const {
 const startGtaUpdates =
   require('./modules/gta/gta-updates');
 
+const {
+  startGtaPlayerSpaces
+} =
+  require('./modules/gta/player-spaces');
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -73,10 +78,14 @@ client.once(
     );
 
     // ─────────────────────────────
-    // GTA
+    // GTA V
     // ─────────────────────────────
 
     startGtaUpdates(
+      readyClient
+    );
+
+    startGtaPlayerSpaces(
       readyClient
     );
   }
