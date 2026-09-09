@@ -2,7 +2,6 @@ const {
   SlashCommandBuilder
 } = require('discord.js');
 
-const http = require('http');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -30,17 +29,9 @@ const DATA_FILE =
     'gta-links.json'
   );
 
-// Demandes temporaires en mémoire.
-//
-// requestId -> {
-//   code,
-//   createdAt,
-//   expiresAt,
-//   discordId,
-//   token,
-//   completed,
-//   retrieved
-// }
+// ─────────────────────────────────────
+// DEMANDES TEMPORAIRES
+// ─────────────────────────────────────
 
 const pendingLinks =
   new Map();
@@ -123,13 +114,13 @@ function saveData(data) {
 // ─────────────────────────────────────
 
 function generateCode() {
-  const number =
+  return (
+    'GTA-' +
     crypto.randomInt(
       100000,
       1000000
-    );
-
-  return `GTA-${number}`;
+    )
+  );
 }
 
 function generateRequestId() {
@@ -151,7 +142,7 @@ function hashToken(token) {
 
 function findRequestByCode(code) {
   const normalizedCode =
-    code
+    String(code)
       .trim()
       .toUpperCase();
 
@@ -164,7 +155,7 @@ function findRequestByCode(code) {
   ) {
     if (
       request.code ===
-        normalizedCode
+      normalizedCode
     ) {
       return {
         requestId,
@@ -214,7 +205,7 @@ function createUniqueCode() {
 }
 
 // ─────────────────────────────────────
-// ENREGISTRER LE TOKEN
+// TOKEN PERMANENT
 // ─────────────────────────────────────
 
 function registerToken(
@@ -268,7 +259,7 @@ function registerToken(
 }
 
 // ─────────────────────────────────────
-// RÉPONSE HTTP JSON
+// RÉPONSE JSON
 // ─────────────────────────────────────
 
 function sendJson(
@@ -276,11 +267,21 @@ function sendJson(
   status,
   data
 ) {
+  const payload =
+    JSON.stringify(
+      data
+    );
+
   response.writeHead(
     status,
     {
       'Content-Type':
         'application/json; charset=utf-8',
+
+      'Content-Length':
+        Buffer.byteLength(
+          payload
+        ),
 
       'Access-Control-Allow-Origin':
         '*',
@@ -294,298 +295,295 @@ function sendJson(
   );
 
   response.end(
-    JSON.stringify(
-      data
-    )
+    payload
   );
 }
 
 // ─────────────────────────────────────
-// API
+// ROUTES GTA
 // ─────────────────────────────────────
 
-function startHttpServer(
-  client
+async function handleGtaRequest(
+  request,
+  response
 ) {
-  const port =
-    Number(
-      process.env.PORT
-    ) || 3000;
+  try {
+    cleanExpiredRequests();
 
-  const server =
-    http.createServer(
-      async (
-        request,
-        response
-      ) => {
-        try {
-          cleanExpiredRequests();
+    const requestUrl =
+      new URL(
+        request.url,
+        `http://${request.headers.host || 'localhost'}`
+      );
 
-          if (
-            request.method ===
-              'OPTIONS'
-          ) {
-            sendJson(
-              response,
-              200,
-              {
-                ok: true
-              }
-            );
+    // On ne prend que les routes GTA.
 
-            return;
-          }
+    if (
+      !requestUrl.pathname.startsWith(
+        '/gta/'
+      )
+    ) {
+      return false;
+    }
 
-          const requestUrl =
-            new URL(
-              request.url,
-              `http://${request.headers.host || 'localhost'}`
-            );
+    // ─────────────────────────────
+    // OPTIONS
+    // ─────────────────────────────
 
-          // ─────────────────────────
-          // TEST API
-          // ─────────────────────────
-
-          if (
-            request.method ===
-              'GET' &&
-            requestUrl.pathname ===
-              '/gta/health'
-          ) {
-            sendJson(
-              response,
-              200,
-              {
-                ok: true,
-                service:
-                  'Naru GTA Bridge',
-                status:
-                  'online'
-              }
-            );
-
-            return;
-          }
-
-          // ─────────────────────────
-          // COMMENCER UNE LIAISON
-          // ─────────────────────────
-
-          if (
-            request.method ===
-              'POST' &&
-            requestUrl.pathname ===
-              '/gta/link/start'
-          ) {
-            const requestId =
-              generateRequestId();
-
-            const code =
-              createUniqueCode();
-
-            const createdAt =
-              Date.now();
-
-            pendingLinks.set(
-              requestId,
-              {
-                code,
-
-                createdAt,
-
-                expiresAt:
-                  createdAt +
-                  LINK_CODE_DURATION,
-
-                discordId:
-                  null,
-
-                token:
-                  null,
-
-                installationId:
-                  null,
-
-                completed:
-                  false,
-
-                retrieved:
-                  false
-              }
-            );
-
-            console.log(
-              `🔗 Nouvelle demande GTA : ${code}`
-            );
-
-            sendJson(
-              response,
-              200,
-              {
-                ok: true,
-
-                requestId,
-
-                code,
-
-                expiresIn:
-                  600
-              }
-            );
-
-            return;
-          }
-
-          // ─────────────────────────
-          // ÉTAT D'UNE LIAISON
-          // ─────────────────────────
-
-          if (
-            request.method ===
-              'GET' &&
-            requestUrl.pathname.startsWith(
-              '/gta/link/status/'
-            )
-          ) {
-            const requestId =
-              requestUrl.pathname
-                .split('/')
-                .pop();
-
-            const link =
-              pendingLinks.get(
-                requestId
-              );
-
-            if (!link) {
-              sendJson(
-                response,
-                404,
-                {
-                  ok: false,
-                  status:
-                    'expired_or_unknown'
-                }
-              );
-
-              return;
-            }
-
-            if (
-              !link.completed
-            ) {
-              sendJson(
-                response,
-                200,
-                {
-                  ok: true,
-                  status:
-                    'waiting'
-                }
-              );
-
-              return;
-            }
-
-            if (
-              link.retrieved
-            ) {
-              sendJson(
-                response,
-                410,
-                {
-                  ok: false,
-                  status:
-                    'already_retrieved'
-                }
-              );
-
-              return;
-            }
-
-            link.retrieved =
-              true;
-
-            sendJson(
-              response,
-              200,
-              {
-                ok: true,
-
-                status:
-                  'linked',
-
-                discordId:
-                  link.discordId,
-
-                installationId:
-                  link.installationId,
-
-                token:
-                  link.token
-              }
-            );
-
-            // Le token en clair n'est gardé
-            // que quelques secondes après
-            // sa récupération.
-
-            setTimeout(
-              () => {
-                pendingLinks.delete(
-                  requestId
-                );
-              },
-              5000
-            );
-
-            return;
-          }
-
-          // ─────────────────────────
-          // ROUTE INCONNUE
-          // ─────────────────────────
-
-          sendJson(
-            response,
-            404,
-            {
-              ok: false,
-              error:
-                'Route inconnue'
-            }
-          );
-
-        } catch (error) {
-          console.error(
-            '❌ Erreur API GTA :',
-            error
-          );
-
-          sendJson(
-            response,
-            500,
-            {
-              ok: false,
-              error:
-                'Erreur serveur'
-            }
-          );
+    if (
+      request.method ===
+      'OPTIONS'
+    ) {
+      sendJson(
+        response,
+        200,
+        {
+          ok: true
         }
+      );
+
+      return true;
+    }
+
+    // ─────────────────────────────
+    // HEALTH
+    // ─────────────────────────────
+
+    if (
+      request.method ===
+        'GET' &&
+      requestUrl.pathname ===
+        '/gta/health'
+    ) {
+      sendJson(
+        response,
+        200,
+        {
+          ok: true,
+
+          service:
+            'Naru GTA Bridge',
+
+          status:
+            'online'
+        }
+      );
+
+      return true;
+    }
+
+    // ─────────────────────────────
+    // COMMENCER LIAISON
+    // ─────────────────────────────
+
+    if (
+      request.method ===
+        'POST' &&
+      requestUrl.pathname ===
+        '/gta/link/start'
+    ) {
+      const requestId =
+        generateRequestId();
+
+      const code =
+        createUniqueCode();
+
+      const createdAt =
+        Date.now();
+
+      pendingLinks.set(
+        requestId,
+        {
+          code,
+
+          createdAt,
+
+          expiresAt:
+            createdAt +
+            LINK_CODE_DURATION,
+
+          discordId:
+            null,
+
+          token:
+            null,
+
+          installationId:
+            null,
+
+          completed:
+            false,
+
+          retrieved:
+            false
+        }
+      );
+
+      console.log(
+        `🔗 Nouvelle demande GTA : ${code}`
+      );
+
+      sendJson(
+        response,
+        200,
+        {
+          ok: true,
+
+          requestId,
+
+          code,
+
+          expiresIn:
+            600
+        }
+      );
+
+      return true;
+    }
+
+    // ─────────────────────────────
+    // ÉTAT LIAISON
+    // ─────────────────────────────
+
+    if (
+      request.method ===
+        'GET' &&
+      requestUrl.pathname.startsWith(
+        '/gta/link/status/'
+      )
+    ) {
+      const requestId =
+        requestUrl.pathname
+          .split('/')
+          .pop();
+
+      const link =
+        pendingLinks.get(
+          requestId
+        );
+
+      if (!link) {
+        sendJson(
+          response,
+          404,
+          {
+            ok: false,
+
+            status:
+              'expired_or_unknown'
+          }
+        );
+
+        return true;
+      }
+
+      if (
+        !link.completed
+      ) {
+        sendJson(
+          response,
+          200,
+          {
+            ok: true,
+
+            status:
+              'waiting'
+          }
+        );
+
+        return true;
+      }
+
+      if (
+        link.retrieved
+      ) {
+        sendJson(
+          response,
+          410,
+          {
+            ok: false,
+
+            status:
+              'already_retrieved'
+          }
+        );
+
+        return true;
+      }
+
+      link.retrieved =
+        true;
+
+      sendJson(
+        response,
+        200,
+        {
+          ok: true,
+
+          status:
+            'linked',
+
+          discordId:
+            link.discordId,
+
+          installationId:
+            link.installationId,
+
+          token:
+            link.token
+        }
+      );
+
+      setTimeout(
+        () => {
+          pendingLinks.delete(
+            requestId
+          );
+        },
+        5000
+      );
+
+      return true;
+    }
+
+    // Route GTA inconnue.
+
+    sendJson(
+      response,
+      404,
+      {
+        ok: false,
+
+        error:
+          'Route GTA inconnue'
       }
     );
 
-  server.listen(
-    port,
-    '0.0.0.0',
-    () => {
-      console.log(
-        `🌐 Naru GTA Bridge API active sur le port ${port}`
+    return true;
+
+  } catch (error) {
+    console.error(
+      '❌ Erreur route GTA :',
+      error
+    );
+
+    if (
+      !response.headersSent
+    ) {
+      sendJson(
+        response,
+        500,
+        {
+          ok: false,
+
+          error:
+            'Erreur serveur GTA'
+        }
       );
     }
-  );
 
-  return server;
+    return true;
+  }
 }
 
 // ─────────────────────────────────────
@@ -697,8 +695,6 @@ async function handleInteraction(
   }
 
   try {
-    // Vérification rôle GTA
-
     if (
       !interaction.member.roles.cache.has(
         GTA_ROLE_ID
@@ -830,7 +826,7 @@ async function handleInteraction(
 }
 
 // ─────────────────────────────────────
-// MODULE PRINCIPAL
+// DÉMARRAGE MODULE
 // ─────────────────────────────────────
 
 function startGtaLink(
@@ -851,21 +847,19 @@ function startGtaLink(
     handleInteraction
   );
 
-  startHttpServer(
-    client
-  );
-
-  // Nettoyage périodique
-  // des codes expirés.
-
   setInterval(
     cleanExpiredRequests,
     60 * 1000
   );
 }
 
+// ─────────────────────────────────────
+// EXPORTS
+// ─────────────────────────────────────
+
 module.exports = {
   startGtaLink,
+  handleGtaRequest,
   hashToken,
   loadData,
   saveData
