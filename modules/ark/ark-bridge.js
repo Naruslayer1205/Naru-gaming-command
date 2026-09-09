@@ -96,10 +96,11 @@ function startArkBridge(
         try {
 
           // ─────────────────────────
-          // ROUTES GTA V
+          // ROUTES GTA
           // ─────────────────────────
 
           if (
+            req.url &&
             req.url.startsWith(
               '/gta/'
             )
