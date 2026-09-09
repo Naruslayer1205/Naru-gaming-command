@@ -11,6 +11,10 @@ const {
   findPlayerCategory
 } = require('./player-spaces');
 
+const {
+  processGtaChallengeTelemetry
+} = require('./gta-challenges');
+
 // ─────────────────────────────────────
 // CONFIGURATION
 // ─────────────────────────────────────
@@ -1335,6 +1339,20 @@ async function handleTelemetry(
     previous,
     auth.installationId
   );
+
+  try {
+    await processGtaChallengeTelemetry(
+      gtaClient,
+      member,
+      category,
+      state
+    );
+  } catch (error) {
+    console.error(
+      '❌ Erreur traitement défis GTA :',
+      error
+    );
+  }
 
   gtaClient.gtaBridge
     .previousStates
