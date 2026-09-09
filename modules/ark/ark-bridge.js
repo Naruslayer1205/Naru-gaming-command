@@ -1,6 +1,10 @@
 const http = require('http');
 
 const {
+  handleGtaRequest
+} = require('../gta/gta-link');
+
+const {
   findPlayerCategory
 } = require('./player-spaces');
 
@@ -90,6 +94,26 @@ function startArkBridge(
         res
       ) => {
         try {
+
+          // ─────────────────────────
+          // ROUTES GTA V
+          // ─────────────────────────
+
+          if (
+            req.url.startsWith(
+              '/gta/'
+            )
+          ) {
+            const handled =
+              await handleGtaRequest(
+                req,
+                res
+              );
+
+            if (handled) {
+              return;
+            }
+          }
 
           // ─────────────────────────
           // STATUS API
