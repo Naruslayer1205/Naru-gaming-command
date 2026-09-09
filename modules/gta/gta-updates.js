@@ -40,26 +40,278 @@ function ensureDataFolder() {
 }
 
 
-function decodeHtml(text = '') {
+// ======================================================
+// DECODAGE HTML COMPLET
+// ======================================================
+
+function decodeHtmlOnce(text = '') {
+
+  const entities = {
+
+    amp: '&',
+    quot: '"',
+    apos: "'",
+    lt: '<',
+    gt: '>',
+    nbsp: ' ',
+
+    // Français
+    agrave: 'à',
+    aacute: 'á',
+    acirc: 'â',
+    atilde: 'ã',
+    auml: 'ä',
+    aring: 'å',
+
+    aelig: 'æ',
+
+    ccedil: 'ç',
+
+    egrave: 'è',
+    eacute: 'é',
+    ecirc: 'ê',
+    euml: 'ë',
+
+    igrave: 'ì',
+    iacute: 'í',
+    icirc: 'î',
+    iuml: 'ï',
+
+    ntilde: 'ñ',
+
+    ograve: 'ò',
+    oacute: 'ó',
+    ocirc: 'ô',
+    otilde: 'õ',
+    ouml: 'ö',
+
+    oelig: 'œ',
+
+    ugrave: 'ù',
+    uacute: 'ú',
+    ucirc: 'û',
+    uuml: 'ü',
+
+    yacute: 'ý',
+    yuml: 'ÿ',
+
+    // Majuscules
+    Agrave: 'À',
+    Aacute: 'Á',
+    Acirc: 'Â',
+    Atilde: 'Ã',
+    Auml: 'Ä',
+    Aring: 'Å',
+
+    AElig: 'Æ',
+
+    Ccedil: 'Ç',
+
+    Egrave: 'È',
+    Eacute: 'É',
+    Ecirc: 'Ê',
+    Euml: 'Ë',
+
+    Igrave: 'Ì',
+    Iacute: 'Í',
+    Icirc: 'Î',
+    Iuml: 'Ï',
+
+    Ntilde: 'Ñ',
+
+    Ograve: 'Ò',
+    Oacute: 'Ó',
+    Ocirc: 'Ô',
+    Otilde: 'Õ',
+    Ouml: 'Ö',
+
+    OElig: 'Œ',
+
+    Ugrave: 'Ù',
+    Uacute: 'Ú',
+    Ucirc: 'Û',
+    Uuml: 'Ü',
+
+    Yacute: 'Ý',
+
+    // Ponctuation
+    rsquo: '’',
+    lsquo: '‘',
+
+    rdquo: '”',
+    ldquo: '“',
+
+    ndash: '–',
+    mdash: '—',
+
+    hellip: '…',
+
+    bull: '•',
+
+    middot: '·',
+
+    copy: '©',
+    reg: '®',
+    trade: '™',
+
+    euro: '€',
+    pound: '£',
+    yen: '¥',
+
+    times: '×',
+    divide: '÷'
+  };
+
 
   return String(text)
 
-    .replace(/&amp;/gi, '&')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#039;/gi, "'")
-    .replace(/&#39;/gi, "'")
-    .replace(/&#x27;/gi, "'")
-    .replace(/&apos;/gi, "'")
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&rsquo;/gi, '’')
-    .replace(/&lsquo;/gi, '‘')
-    .replace(/&ldquo;/gi, '“')
-    .replace(/&rdquo;/gi, '”')
-    .replace(/\\u002F/gi, '/')
-    .replace(/\\u0026/gi, '&')
-    .replace(/\\\//g, '/')
+    // Unicode échappé
+    .replace(
+      /\\u([0-9a-fA-F]{4})/g,
+      (_, hex) =>
+        String.fromCharCode(
+          parseInt(
+            hex,
+            16
+          )
+        )
+    )
+
+    // Slash échappé
+    .replace(
+      /\\\//g,
+      '/'
+    )
+
+    // Entités numériques HEX
+    .replace(
+      /&#x([0-9a-fA-F]+);?/g,
+      (_, hex) => {
+
+        try {
+
+          return String.fromCodePoint(
+            parseInt(
+              hex,
+              16
+            )
+          );
+
+        } catch {
+
+          return _;
+        }
+      }
+    )
+
+    // Entités numériques décimales
+    .replace(
+      /&#([0-9]+);?/g,
+      (_, number) => {
+
+        try {
+
+          return String.fromCodePoint(
+            parseInt(
+              number,
+              10
+            )
+          );
+
+        } catch {
+
+          return _;
+        }
+      }
+    )
+
+    // Entités HTML nommées
+    .replace(
+      /&([a-zA-Z]+);/g,
+      (
+        full,
+        name
+      ) => {
+
+        if (
+          Object.prototype.hasOwnProperty.call(
+            entities,
+            name
+          )
+        ) {
+
+          return entities[name];
+        }
+
+
+        const lower =
+          name.toLowerCase();
+
+
+        if (
+          Object.prototype.hasOwnProperty.call(
+            entities,
+            lower
+          )
+        ) {
+
+          return entities[lower];
+        }
+
+
+        return full;
+      }
+    );
+}
+
+
+function decodeHtml(text = '') {
+
+  let value =
+    String(text);
+
+
+  // Rockstar peut renvoyer certaines entités
+  // encodées plusieurs fois.
+  //
+  // Exemple :
+  //
+  // &amp;eacute;
+  // ↓
+  // &eacute;
+  // ↓
+  // é
+
+  for (
+    let i = 0;
+    i < 5;
+    i++
+  ) {
+
+    const decoded =
+      decodeHtmlOnce(
+        value
+      );
+
+
+    if (
+      decoded === value
+    ) {
+
+      break;
+    }
+
+
+    value =
+      decoded;
+  }
+
+
+  return value
+    .replace(
+      /\u00A0/g,
+      ' '
+    )
     .trim();
 }
 
@@ -188,6 +440,7 @@ async function fetchText(
 
 
   return {
+
     text:
       await response.text(),
 
@@ -196,6 +449,7 @@ async function fetchText(
 
     headers:
       response.headers
+
   };
 }
 
@@ -377,10 +631,6 @@ function normalizeArticleUrl(url) {
   }
 
 
-  // ==================================================
-  // EXTRACTION D'UNE URL ROCKSTAR ENFOUIE
-  // ==================================================
-
   const rockstarMatch =
     String(url)
       .match(
@@ -497,7 +747,7 @@ function buildFrenchUrl(url) {
       new URL(url);
 
 
-    let pathname =
+    const pathname =
       parsed.pathname.replace(
         /^\/fr\//i,
         '/'
@@ -554,7 +804,8 @@ async function discoverFromNewswire() {
       || [];
 
 
-    const links = [];
+    const links =
+      [];
 
 
     for (
@@ -637,7 +888,8 @@ async function discoverFromDuckDuckGo() {
   ];
 
 
-  const results = [];
+  const results =
+    [];
 
 
   for (
@@ -674,7 +926,6 @@ async function discoverFromDuckDuckGo() {
         );
 
 
-      // URLs Rockstar directement présentes
       const directMatches =
         html.match(
           /https?:\/\/(?:www\.)?rockstargames\.com\/(?:fr\/)?newswire\/article\/[^"'&<>\s]+/gi
@@ -702,7 +953,6 @@ async function discoverFromDuckDuckGo() {
       }
 
 
-      // DuckDuckGo utilise souvent ?uddg=URL
       const uddgMatches =
         [
           ...html.matchAll(
@@ -992,7 +1242,11 @@ async function fetchArticle(
         description
       ),
 
-    image,
+    image:
+      decodeHtml(
+        image || ''
+      )
+      || null,
 
     published
 
@@ -1073,7 +1327,6 @@ function classifyGtaArticle(
     );
 
 
-  // On refuse GTA VI.
   if (
     gtaVI &&
     !gtaOnline
@@ -1170,10 +1423,6 @@ async function getPreferredArticle(
   );
 
 
-  // ==================================================
-  // VERSION FR
-  // ==================================================
-
   const frenchUrl =
     buildFrenchUrl(
       englishUrl
@@ -1230,12 +1479,16 @@ async function getPreferredArticle(
           french.finalUrl,
 
         title:
-          french.title,
+          decodeHtml(
+            french.title
+          ),
 
         description:
-          french.description
-          ||
-          english.description,
+          decodeHtml(
+            french.description
+            ||
+            english.description
+          ),
 
         image:
           french.image
@@ -1281,10 +1534,14 @@ async function getPreferredArticle(
       english.finalUrl,
 
     title:
-      english.title,
+      decodeHtml(
+        english.title
+      ),
 
     description:
-      english.description,
+      decodeHtml(
+        english.description
+      ),
 
     image:
       english.image,
@@ -1393,6 +1650,18 @@ function createEmbed(
   article
 ) {
 
+  const cleanTitle =
+    decodeHtml(
+      article.title
+    );
+
+
+  const cleanDescription =
+    decodeHtml(
+      article.description
+    );
+
+
   const embed =
     new EmbedBuilder()
 
@@ -1408,7 +1677,7 @@ function createEmbed(
       .setTitle(
 
         truncate(
-          article.title,
+          cleanTitle,
           250
         )
 
@@ -1422,7 +1691,7 @@ function createEmbed(
 
         truncate(
 
-          article.description
+          cleanDescription
 
           ||
 
@@ -1604,7 +1873,6 @@ async function findRecentGtaArticles() {
   }
 
 
-  // récent -> ancien
   articles.sort(
     (a, b) =>
       articleTime(b)
@@ -1778,7 +2046,6 @@ async function checkGtaUpdates(
     );
 
 
-    // publication ancien -> récent
     const ordered =
       [
         ...newArticles
@@ -1811,7 +2078,7 @@ async function checkGtaUpdates(
 
 
       console.log(
-        `📢 GTA publiée : ${article.title}`
+        `📢 GTA publiée : ${decodeHtml(article.title)}`
       );
 
 
