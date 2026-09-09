@@ -284,7 +284,6 @@ function startArkBridge(
               receivedAt
             };
 
-            // État précédent pour le journal
             const previous =
               client.arkBridge
                 .previousStates
@@ -298,10 +297,6 @@ function startArkBridge(
                 discordUserId,
                 state
               );
-
-            // ─────────────────────────
-            // DISCORD
-            // ─────────────────────────
 
             await updateArkDiscord(
               client,
@@ -694,7 +689,7 @@ function buildCharacterMessage(
     `**Joueur Discord :** ${member}`,
     `**Personnage :** ${value(player.name)}`,
     `**Niveau :** ${value(player.level)}`,
-    `**XP :** ${value(player.experience)}`,
+    `**XP :** ${number(player.experience)}`,
     `**Sexe :** ${translateSex(player.sex)}`,
     `**Tribu :** ${value(player.tribe)}`,
     '',
@@ -795,28 +790,86 @@ function buildDinoMessage(
     i++
   ) {
     const dino =
-      dinos[i];
+      dinos[i] || {};
+
+    const dinoName =
+      firstAvailable(
+        dino.name,
+        dino.tamed_name,
+        dino.tamedName
+      );
+
+    const species =
+      firstAvailable(
+        dino.species,
+        dino.creature,
+        dino.class,
+        dino.class_name,
+        dino.className
+      );
+
+    const level =
+      firstAvailable(
+        dino.level,
+        dino.lvl
+      );
+
+    const owner =
+      firstAvailable(
+        dino.owner,
+        dino.tamer,
+        dino.tamer_name,
+        dino.tamerName,
+        dino.tribe,
+        dino.tribe_name,
+        dino.tribeName
+      );
 
     const father =
-      Number(
-        dino.mutationsFather || 0
+      safeNumber(
+        firstAvailable(
+          dino.mutationsFather,
+          dino.mutations_father,
+          dino.mut_f,
+          dino['mut-f']
+        ),
+        0
       );
 
     const mother =
-      Number(
-        dino.mutationsMother || 0
+      safeNumber(
+        firstAvailable(
+          dino.mutationsMother,
+          dino.mutations_mother,
+          dino.mut_m,
+          dino['mut-m']
+        ),
+        0
+      );
+
+    const imprint =
+      firstAvailable(
+        dino.imprint,
+        dino.imprinting,
+        dino.imprinting_quality,
+        dino.imprintingQuality
+      );
+
+    const position =
+      getDinoPosition(
+        dino
       );
 
     lines.push(
-      `## ${i + 1}. ${value(dino.name, 'Sans nom')}`
+      `## ${i + 1}. ${value(dinoName, 'Sans nom')}`
     );
 
     lines.push(
-      `**Espèce :** ${cleanSpecies(dino.species)}`
+      `**Espèce :** ${cleanSpecies(species)}`
     );
 
     lines.push(
-      `**Niveau :** ${value(dino.level)}`
+      `**Niveau :** ${value(level)}`
     );
 
     lines.push(
@@ -824,11 +877,11 @@ function buildDinoMessage(
     );
 
     lines.push(
-      `**Propriétaire :** ${value(dino.owner)}`
+      `**Propriétaire :** ${value(owner)}`
     );
 
     lines.push(
-      `**Imprint :** ${formatPercent(dino.imprint)}`
+      `**Imprint :** ${formatPercent(imprint)}`
     );
 
     lines.push(
@@ -836,7 +889,7 @@ function buildDinoMessage(
     );
 
     lines.push(
-      `**Position :** ${formatPositionInline(dino.position)}`
+      `**Position :** ${formatPositionInline(position)}`
     );
 
     lines.push('');
@@ -934,7 +987,6 @@ async function updateJournal(
 
   const events = [];
 
-  // Map
   if (
     previous.map &&
     state.map &&
@@ -945,7 +997,6 @@ async function updateJournal(
     );
   }
 
-  // Niveau
   const oldLevel =
     previous.ark
       ?.players
@@ -969,7 +1020,6 @@ async function updateJournal(
     );
   }
 
-  // Dinos
   const oldDinos =
     previous.ark
       ?.dinos
@@ -1000,7 +1050,6 @@ async function updateJournal(
     );
   }
 
-  // Structures
   const oldStructures =
     previous.ark
       ?.world
@@ -1080,14 +1129,14 @@ function number(
     return 'Non disponible';
   }
 
-  const value =
+  const numericValue =
     Number(
       input
     );
 
   if (
     Number.isNaN(
-      value
+      numericValue
     )
   ) {
     return String(
@@ -1095,7 +1144,7 @@ function number(
     );
   }
 
-  return value.toLocaleString(
+  return numericValue.toLocaleString(
     'fr-FR',
     {
       maximumFractionDigits:
@@ -1137,12 +1186,114 @@ function translateSex(
   );
 }
 
-function formatPercent(
-  value
+function firstAvailable(
+  ...values
 ) {
+  for (
+    const item
+    of values
+  ) {
+    if (
+      item !== null &&
+      item !== undefined &&
+      item !== ''
+    ) {
+      return item;
+    }
+  }
+
+  return null;
+}
+
+function safeNumber(
+  input,
+  fallback = 0
+) {
+  const parsed =
+    Number(
+      input
+    );
+
+  if (
+    Number.isNaN(
+      parsed
+    )
+  ) {
+    return fallback;
+  }
+
+  return parsed;
+}
+
+function getDinoPosition(
+  dino
+) {
+  if (!dino) {
+    return null;
+  }
+
+  if (dino.position) {
+    return dino.position;
+  }
+
+  const hasLatLon =
+    dino.lat != null ||
+    dino.lon != null;
+
+  const hasXYZ =
+    dino.x != null ||
+    dino.y != null ||
+    dino.z != null;
+
+  const raw =
+    firstAvailable(
+      dino.raw,
+      dino.ccc
+    );
+
+  if (
+    !hasLatLon &&
+    !hasXYZ &&
+    !raw
+  ) {
+    return null;
+  }
+
+  return {
+    lat:
+      dino.lat ?? null,
+
+    lon:
+      dino.lon ?? null,
+
+    x:
+      dino.x ?? null,
+
+    y:
+      dino.y ?? null,
+
+    z:
+      dino.z ?? null,
+
+    raw:
+      raw ?? null
+  };
+}
+
+function formatPercent(
+  input
+) {
+  if (
+    input === null ||
+    input === undefined ||
+    input === ''
+  ) {
+    return 'Non disponible';
+  }
+
   const numberValue =
     Number(
-      value
+      input
     );
 
   if (
