@@ -78,6 +78,11 @@ const PLAYER_CHANNELS = [
   },
 
   {
+    key: 'mods',
+    name: '🧩・mods'
+  },
+
+  {
     key: 'connexion',
     name: '🔗・connexion'
   }
@@ -265,64 +270,40 @@ async function createPlayerSpace(
     );
 
   const existingData =
-    data[playerKey];
-
-  if (
-    existingData?.categoryId
-  ) {
-    const existingCategory =
-      guild.channels.cache.get(
-        existingData.categoryId
-      );
-
-    if (
-      existingCategory
-    ) {
-      return existingData;
-    }
-  }
+    data[playerKey] ||
+    null;
 
   const playerName =
     getPlayerName(
       member
     );
 
-  console.log(
-    `🚛 Création espace ${game.shortName} pour ${member.user.tag}`
-  );
-
-  const category =
-    await guild.channels.create({
-      name:
-        `${game.categoryEmoji}・${playerName}-${game.key}`,
-
-      type:
-        ChannelType.GuildCategory,
-
-      permissionOverwrites:
-        buildPermissions(
-          guild,
-          member
+  let category =
+    existingData?.categoryId
+      ? guild.channels.cache.get(
+          existingData.categoryId
         )
-    });
+      : null;
 
-  const channels =
-    {};
+  let isNewSpace =
+    false;
 
-  for (
-    const channelConfig
-    of PLAYER_CHANNELS
+  if (
+    !category ||
+    category.type !==
+      ChannelType.GuildCategory
   ) {
-    const channel =
+    console.log(
+      `🚛 Création espace ${game.shortName} pour ${member.user.tag}`
+    );
+
+    category =
       await guild.channels.create({
         name:
-          channelConfig.name,
+          `${game.categoryEmoji}・${playerName}-${game.key}`,
 
         type:
-          ChannelType.GuildText,
-
-        parent:
-          category.id,
+          ChannelType.GuildCategory,
 
         permissionOverwrites:
           buildPermissions(
@@ -330,6 +311,93 @@ async function createPlayerSpace(
             member
           )
       });
+
+    isNewSpace =
+      true;
+  }
+
+  const channels =
+    {};
+
+  let changed =
+    isNewSpace;
+
+  for (
+    const channelConfig
+    of PLAYER_CHANNELS
+  ) {
+    let channel =
+      null;
+
+    const savedChannelId =
+      existingData?.channels?.[
+        channelConfig.key
+      ];
+
+    if (
+      savedChannelId
+    ) {
+      const savedChannel =
+        guild.channels.cache.get(
+          savedChannelId
+        );
+
+      if (
+        savedChannel &&
+        savedChannel.type ===
+          ChannelType.GuildText &&
+        savedChannel.parentId ===
+          category.id
+      ) {
+        channel =
+          savedChannel;
+      }
+    }
+
+    if (
+      !channel
+    ) {
+      channel =
+        guild.channels.cache.find(
+          current =>
+            current.type ===
+              ChannelType.GuildText &&
+            current.parentId ===
+              category.id &&
+            current.name ===
+              channelConfig.name
+        ) ||
+        null;
+    }
+
+    if (
+      !channel
+    ) {
+      channel =
+        await guild.channels.create({
+          name:
+            channelConfig.name,
+
+          type:
+            ChannelType.GuildText,
+
+          parent:
+            category.id,
+
+          permissionOverwrites:
+            buildPermissions(
+              guild,
+              member
+            )
+        });
+
+      changed =
+        true;
+
+      console.log(
+        `✅ Salon ${channelConfig.name} créé pour ${member.user.tag}`
+      );
+    }
 
     channels[
       channelConfig.key
@@ -353,6 +421,10 @@ async function createPlayerSpace(
     channels,
 
     createdAt:
+      existingData?.createdAt ||
+      new Date().toISOString(),
+
+    updatedAt:
       new Date().toISOString()
   };
 
@@ -360,33 +432,45 @@ async function createPlayerSpace(
     data
   );
 
-  const connectionChannel =
-    guild.channels.cache.get(
-      channels.connexion
-    );
-
   if (
-    connectionChannel
+    isNewSpace
   ) {
-    await connectionChannel.send({
-      content:
-        [
-          `# ${game.categoryEmoji} ${game.name}`,
-          '',
-          `Bienvenue <@${member.id}>.`,
-          '',
-          'Ton espace personnel a été créé automatiquement.',
-          '',
-          '🔴 **Bridge : non connecté**',
-          '',
-          'Le bridge sera détecté automatiquement quand il sera installé sur ton PC.'
-        ].join('\n')
-    });
+    const connectionChannel =
+      guild.channels.cache.get(
+        channels.connexion
+      );
+
+    if (
+      connectionChannel
+    ) {
+      await connectionChannel.send({
+        content:
+          [
+            `# ${game.categoryEmoji} ${game.name}`,
+            '',
+            `Bienvenue <@${member.id}>.`,
+            '',
+            'Ton espace personnel a été créé automatiquement.',
+            '',
+            '🔴 **Bridge : non connecté**',
+            '',
+            'Le bridge sera détecté automatiquement quand il sera installé sur ton PC.'
+          ].join('\n')
+      });
+    }
   }
 
-  console.log(
-    `✅ Espace ${game.shortName} créé pour ${member.user.tag}`
-  );
+  if (
+    changed
+  ) {
+    console.log(
+      `✅ Espace ${game.shortName} mis à jour pour ${member.user.tag}`
+    );
+  } else {
+    console.log(
+      `✅ Espace ${game.shortName} déjà complet pour ${member.user.tag}`
+    );
+  }
 
   return data[playerKey];
 }
@@ -536,25 +620,10 @@ async function syncMemberGame(
     hasRole &&
     playerData
   ) {
-    const category =
-      member.guild.channels.cache.get(
-        playerData.categoryId
-      );
-
-    if (
-      !category
-    ) {
-      delete data[playerKey];
-
-      saveData(
-        data
-      );
-
-      await createPlayerSpace(
-        member,
-        game
-      );
-    }
+    await createPlayerSpace(
+      member,
+      game
+    );
 
     return;
   }
