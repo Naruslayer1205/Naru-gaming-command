@@ -5,6 +5,10 @@ const {
   ActivityType
 } = require('discord.js');
 
+// ─────────────────────────────
+// ARK
+// ─────────────────────────────
+
 const startArkUpdates =
   require('./modules/ark/ark-updates');
 
@@ -15,6 +19,10 @@ const {
   startArkPlayerSpaces
 } =
   require('./modules/ark/player-spaces');
+
+// ─────────────────────────────
+// GTA V
+// ─────────────────────────────
 
 const startGtaUpdates =
   require('./modules/gta/gta-updates');
@@ -33,6 +41,19 @@ const {
   startGtaLink
 } =
   require('./modules/gta/gta-link');
+
+// ─────────────────────────────
+// ATS / ETS2
+// ─────────────────────────────
+
+const {
+  startAtsEtsUpdates
+} =
+  require('./modules/ATS-ETS/ats-ets-updates');
+
+// ─────────────────────────────
+// CLIENT DISCORD
+// ─────────────────────────────
 
 const client = new Client({
   intents: [
@@ -103,8 +124,20 @@ client.once(
     startGtaLink(
       readyClient
     );
+
+    // ─────────────────────────────
+    // ATS / ETS2
+    // ─────────────────────────────
+
+    startAtsEtsUpdates(
+      readyClient
+    );
   }
 );
+
+// ─────────────────────────────
+// GESTION DES ERREURS
+// ─────────────────────────────
 
 client.on(
   'error',
@@ -135,6 +168,10 @@ process.on(
     );
   }
 );
+
+// ─────────────────────────────
+// TOKEN DISCORD
+// ─────────────────────────────
 
 if (
   !process.env.DISCORD_TOKEN
