@@ -107,6 +107,9 @@ async function sendHelpMessage(
       '🎯 **・défis**',
       'Tes 3 défis GTA V quotidiens : 1 facile, 1 moyen et 1 difficile. La progression est détectée automatiquement par le Bridge et rapporte des points au classement mensuel.',
       '',
+      '🧩 **・mods**',
+      'Les mods et plugins GTA V détectés sur ton installation : ASI, scripts, plugins LSPDFR et autres éléments récupérables par le Bridge.',
+      '',
       '📜 **・journal**',
       'Ton journal GTA V. Il pourra afficher certains événements importants détectés pendant ta partie.',
       '',
@@ -249,6 +252,7 @@ async function createGtaPlayerSpace(
     '🚗・vehicule',
     '📊・statistiques',
     '🎯・défis',
+    '🧩・mods',
     '📜・journal',
     '⚙️・commandes',
     '🆘・aide'
