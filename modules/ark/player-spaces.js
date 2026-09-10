@@ -100,6 +100,9 @@ async function sendHelpMessage(
       '🎯 **・défis**',
       'Tes 3 défis ARK quotidiens : 1 facile, 1 moyen et 1 difficile. Leur progression est suivie automatiquement par ton Naru ARK Bridge.',
       '',
+      '🧩 **・mods**',
+      'Les mods détectés comme actifs pour ta partie ARK : nom, identifiant et autres informations récupérables selon le jeu et le Bridge.',
+      '',
       '💀 **・journal**',
       'Ton journal ARK. Il pourra afficher certains événements importants détectés pendant ta partie.',
       '',
@@ -249,6 +252,7 @@ async function createArkPlayerSpace(
     '🌍・monde',
     '🦕・dinos',
     '🎯・défis',
+    '🧩・mods',
     '💀・journal',
     '⚙️・commandes',
     '🆘・aide'
