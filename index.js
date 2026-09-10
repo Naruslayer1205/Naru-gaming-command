@@ -51,6 +51,11 @@ const {
 } =
   require('./modules/ATS-ETS/ats-ets-updates');
 
+const {
+  startAtsEtsPlayerSpaces
+} =
+  require('./modules/ATS-ETS/player-spaces');
+
 // ─────────────────────────────
 // CLIENT DISCORD
 // ─────────────────────────────
@@ -130,6 +135,10 @@ client.once(
     // ─────────────────────────────
 
     startAtsEtsUpdates(
+      readyClient
+    );
+
+    startAtsEtsPlayerSpaces(
       readyClient
     );
   }
