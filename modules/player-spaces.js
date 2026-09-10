@@ -1,3 +1,7 @@
+const {
+  ChannelType
+} = require('discord.js');
+
 // ============================================================
 // NARU GAMING COMMAND
 // PLAYER SPACES — GESTIONNAIRE GÉNÉRAL
@@ -53,7 +57,23 @@ const ETS2_ROLE_ID =
   '1546760060879765544';
 
 // ============================================================
-// CONFIG ATS / ETS2
+// CATÉGORIES PRINCIPALES
+// ============================================================
+
+const ARK_MAIN_CATEGORY_ID =
+  '1546771818596139059';
+
+const GTA_MAIN_CATEGORY_ID =
+  '1546772954447089765';
+
+const ATS_MAIN_CATEGORY_ID =
+  '1546773656615526520';
+
+const ETS2_MAIN_CATEGORY_ID =
+  '1546774027144532068';
+
+// ============================================================
+// CONFIGURATION JEUX
 // ============================================================
 
 const ATS_GAME = {
@@ -91,24 +111,144 @@ const ETS2_GAME = {
 };
 
 // ============================================================
-// ÉTAT
+// CONFIGURATION DU RANGEMENT
 // ============================================================
 
-let startupRunning =
-  false;
+const SPACE_LAYOUTS = {
+  ark: {
+    key:
+      'ark',
 
-let startupDone =
-  false;
+    name:
+      'ARK',
 
-// Évite de traiter deux changements
-// du même joueur en même temps.
+    emoji:
+      '🦖',
+
+    mainCategoryId:
+      ARK_MAIN_CATEGORY_ID,
+
+    matches:
+      category =>
+        category.name.startsWith(
+          '🦖 ARK — '
+        )
+  },
+
+  gta: {
+    key:
+      'gta',
+
+    name:
+      'GTA V',
+
+    emoji:
+      '🚘',
+
+    mainCategoryId:
+      GTA_MAIN_CATEGORY_ID,
+
+    matches:
+      category =>
+        category.name.startsWith(
+          '🚘 GTA V — '
+        )
+  },
+
+  ats: {
+    key:
+      'ats',
+
+    name:
+      'ATS',
+
+    emoji:
+      '🇺🇸',
+
+    mainCategoryId:
+      ATS_MAIN_CATEGORY_ID,
+
+    matches:
+      category => {
+        const name =
+          category.name
+            .toLowerCase();
+
+        return (
+          name.endsWith(
+            '-ats'
+          ) &&
+          category.id !==
+            ATS_MAIN_CATEGORY_ID
+        );
+      }
+  },
+
+  ets2: {
+    key:
+      'ets2',
+
+    name:
+      'ETS2',
+
+    emoji:
+      '🇪🇺',
+
+    mainCategoryId:
+      ETS2_MAIN_CATEGORY_ID,
+
+    matches:
+      category => {
+        const name =
+          category.name
+            .toLowerCase();
+
+        return (
+          name.endsWith(
+            '-ets2'
+          ) &&
+          category.id !==
+            ETS2_MAIN_CATEGORY_ID
+        );
+      }
+  }
+};
+
+// ============================================================
+// FILE D'ATTENTE
+// ============================================================
 
 const memberQueues =
   new Map();
 
+let layoutQueue =
+  Promise.resolve();
+
 // ============================================================
 // OUTILS
 // ============================================================
+
+function sleep(
+  ms
+) {
+  return new Promise(
+    resolve =>
+      setTimeout(
+        resolve,
+        ms
+      )
+  );
+}
+
+function isUsableMember(
+  member
+) {
+  return Boolean(
+    member &&
+    member.user &&
+    !member.user.bot
+  );
+}
 
 function hasRole(
   member,
@@ -126,26 +266,20 @@ function hasRole(
   );
 }
 
-function isUsableMember(
-  member
+function normalizeName(
+  value
 ) {
-  return Boolean(
-    member &&
-    member.user &&
-    !member.user.bot
-  );
-}
-
-function sleep(
-  ms
-) {
-  return new Promise(
-    resolve =>
-      setTimeout(
-        resolve,
-        ms
-      )
-  );
+  return String(
+    value || ''
+  )
+    .normalize(
+      'NFD'
+    )
+    .replace(
+      /[\u0300-\u036f]/g,
+      ''
+    )
+    .toLowerCase();
 }
 
 // ============================================================
@@ -193,19 +327,262 @@ async function queueMemberTask(
 }
 
 // ============================================================
-// ARK
+// FILE D'ATTENTE POUR LE RANGEMENT
 // ============================================================
 
-async function syncArkMember(
-  member
+async function queueLayoutTask(
+  task
 ) {
+  const next =
+    layoutQueue
+      .catch(
+        () => {}
+      )
+      .then(
+        task
+      );
+
+  layoutQueue =
+    next;
+
+  await next;
+}
+
+// ============================================================
+// TROUVER LES CATÉGORIES PLAYER SPACE
+// ============================================================
+
+function findPlayerCategories(
+  guild,
+  layout
+) {
+  return Array.from(
+    guild.channels.cache.values()
+  )
+    .filter(
+      channel =>
+        channel.type ===
+          ChannelType.GuildCategory &&
+        channel.id !==
+          layout.mainCategoryId &&
+        layout.matches(
+          channel
+        )
+    )
+    .sort(
+      (
+        a,
+        b
+      ) =>
+        normalizeName(
+          a.name
+        ).localeCompare(
+          normalizeName(
+            b.name
+          ),
+          'fr'
+        )
+    );
+}
+
+// ============================================================
+// RANGER UN JEU
+// ============================================================
+
+async function reorderGameSpaces(
+  guild,
+  gameKey
+) {
+  const layout =
+    SPACE_LAYOUTS[
+      gameKey
+    ];
+
   if (
-    !ARK_ROLE_ID
+    !layout
   ) {
     return;
   }
 
+  const mainCategory =
+    guild.channels.cache.get(
+      layout.mainCategoryId
+    );
+
   if (
+    !mainCategory
+  ) {
+    console.warn(
+      `⚠️ ${layout.name} : catégorie principale introuvable (${layout.mainCategoryId}).`
+    );
+
+    return;
+  }
+
+  if (
+    mainCategory.type !==
+    ChannelType.GuildCategory
+  ) {
+    console.warn(
+      `⚠️ ${layout.name} : l'ID principal ne correspond pas à une catégorie Discord.`
+    );
+
+    return;
+  }
+
+  const playerCategories =
+    findPlayerCategories(
+      guild,
+      layout
+    );
+
+  if (
+    playerCategories.length ===
+    0
+  ) {
+    return;
+  }
+
+  console.log(
+    `${layout.emoji} Rangement ${layout.name} : ${playerCategories.length} espace(s)...`
+  );
+
+  let targetPosition =
+    mainCategory.position +
+    1;
+
+  for (
+    const category
+    of playerCategories
+  ) {
+    try {
+      await category.setPosition(
+        targetPosition,
+        {
+          reason:
+            `Naru Gaming Command — rangement Player Spaces ${layout.name}`
+        }
+      );
+
+      targetPosition++;
+
+      await sleep(
+        250
+      );
+
+    } catch (error) {
+      console.error(
+        `❌ Impossible de déplacer ${category.name} :`,
+        error.message
+      );
+    }
+  }
+
+  console.log(
+    `✅ ${layout.name} : catégories rangées.`
+  );
+}
+
+// ============================================================
+// RANGER TOUS LES JEUX
+// ============================================================
+
+async function reorderAllPlayerSpaces(
+  guild
+) {
+  await queueLayoutTask(
+    async () => {
+      console.log('');
+      console.log(
+        `🗂️ Rangement des Player Spaces sur ${guild.name}...`
+      );
+
+      // IMPORTANT :
+      // On fait les blocs du bas vers le haut.
+      //
+      // Comme déplacer une catégorie peut modifier
+      // les positions des autres catégories,
+      // cet ordre limite les déplacements parasites.
+
+      await reorderGameSpaces(
+        guild,
+        'ets2'
+      );
+
+      await sleep(
+        500
+      );
+
+      await reorderGameSpaces(
+        guild,
+        'ats'
+      );
+
+      await sleep(
+        500
+      );
+
+      await reorderGameSpaces(
+        guild,
+        'gta'
+      );
+
+      await sleep(
+        500
+      );
+
+      await reorderGameSpaces(
+        guild,
+        'ark'
+      );
+
+      console.log(
+        '✅ Rangement général des Player Spaces terminé.'
+      );
+      console.log('');
+    }
+  );
+}
+
+// ============================================================
+// RANGER UN SEUL BLOC
+// ============================================================
+
+async function reorderOneGame(
+  guild,
+  gameKey
+) {
+  await queueLayoutTask(
+    async () => {
+      await reorderGameSpaces(
+        guild,
+        gameKey
+      );
+    }
+  );
+}
+
+// ============================================================
+// SYNCHRONISATION D'UN MEMBRE
+// ============================================================
+
+async function syncMember(
+  member
+) {
+  if (
+    !isUsableMember(
+      member
+    )
+  ) {
+    return;
+  }
+
+  // ==========================================================
+  // ARK
+  // ==========================================================
+
+  if (
+    ARK_ROLE_ID &&
     hasRole(
       member,
       ARK_ROLE_ID
@@ -215,15 +592,11 @@ async function syncArkMember(
       member
     );
   }
-}
 
-// ============================================================
-// GTA
-// ============================================================
+  // ==========================================================
+  // GTA
+  // ==========================================================
 
-async function syncGtaMember(
-  member
-) {
   if (
     hasRole(
       member,
@@ -234,15 +607,11 @@ async function syncGtaMember(
       member
     );
   }
-}
 
-// ============================================================
-// ATS
-// ============================================================
+  // ==========================================================
+  // ATS
+  // ==========================================================
 
-async function syncAtsMember(
-  member
-) {
   if (
     hasRole(
       member,
@@ -254,15 +623,11 @@ async function syncAtsMember(
       ATS_GAME
     );
   }
-}
 
-// ============================================================
-// ETS2
-// ============================================================
+  // ==========================================================
+  // ETS2
+  // ==========================================================
 
-async function syncEts2Member(
-  member
-) {
   if (
     hasRole(
       member,
@@ -277,46 +642,7 @@ async function syncEts2Member(
 }
 
 // ============================================================
-// SYNCHRONISATION D'UN JOUEUR
-// ============================================================
-
-async function syncMember(
-  member
-) {
-  if (
-    !isUsableMember(
-      member
-    )
-  ) {
-    return;
-  }
-
-  // Ordre volontaire :
-  //
-  // 1. ARK
-  // 2. GTA
-  // 3. ATS
-  // 4. ETS2
-
-  await syncArkMember(
-    member
-  );
-
-  await syncGtaMember(
-    member
-  );
-
-  await syncAtsMember(
-    member
-  );
-
-  await syncEts2Member(
-    member
-  );
-}
-
-// ============================================================
-// RÉCUPÉRATION DES MEMBRES
+// RÉCUPÉRATION UNIQUE DES MEMBRES
 // ============================================================
 
 async function fetchGuildMembersOnce(
@@ -354,7 +680,7 @@ async function fetchGuildMembersOnce(
 }
 
 // ============================================================
-// SYNCHRONISATION SERVEUR
+// SYNCHRONISATION D'UN SERVEUR
 // ============================================================
 
 async function syncGuild(
@@ -463,7 +789,7 @@ async function syncGuild(
   );
 
   // ==========================================================
-  // 1 — ARK
+  // ARK
   // ==========================================================
 
   console.log('');
@@ -501,15 +827,12 @@ async function syncGuild(
     '✅ Synchronisation ARK terminée.'
   );
 
-  // Petit délai entre les jeux pour éviter
-  // d'enchaîner trop vite les créations Discord.
-
   await sleep(
-    1000
+    750
   );
 
   // ==========================================================
-  // 2 — GTA V
+  // GTA
   // ==========================================================
 
   console.log('');
@@ -547,11 +870,11 @@ async function syncGuild(
   );
 
   await sleep(
-    1000
+    750
   );
 
   // ==========================================================
-  // 3 — ATS
+  // ATS
   // ==========================================================
 
   console.log('');
@@ -590,11 +913,11 @@ async function syncGuild(
   );
 
   await sleep(
-    1000
+    750
   );
 
   // ==========================================================
-  // 4 — ETS2
+  // ETS2
   // ==========================================================
 
   console.log('');
@@ -632,7 +955,18 @@ async function syncGuild(
     '✅ Synchronisation ETS2 terminée.'
   );
 
-  console.log('');
+  // ==========================================================
+  // RANGEMENT AUTOMATIQUE
+  // ==========================================================
+
+  await sleep(
+    1000
+  );
+
+  await reorderAllPlayerSpaces(
+    guild
+  );
+
   console.log(
     '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
   );
@@ -647,37 +981,19 @@ async function syncGuild(
 }
 
 // ============================================================
-// SYNCHRONISATION GÉNÉRALE
+// SYNCHRONISATION DE TOUS LES SERVEURS
 // ============================================================
 
 async function syncAllGuilds(
   client
 ) {
-  if (
-    startupRunning
+  for (
+    const guild
+    of client.guilds.cache.values()
   ) {
-    return;
-  }
-
-  startupRunning =
-    true;
-
-  try {
-    for (
-      const guild
-      of client.guilds.cache.values()
-    ) {
-      await syncGuild(
-        guild
-      );
-    }
-
-    startupDone =
-      true;
-
-  } finally {
-    startupRunning =
-      false;
+    await syncGuild(
+      guild
+    );
   }
 }
 
@@ -730,6 +1046,15 @@ async function handleRoleChange(
           await createArkPlayerSpace(
             newMember
           );
+
+          await sleep(
+            500
+          );
+
+          await reorderOneGame(
+            newMember.guild,
+            'ark'
+          );
         }
 
         if (
@@ -743,11 +1068,20 @@ async function handleRoleChange(
           await deleteArkPlayerSpace(
             newMember
           );
+
+          await sleep(
+            500
+          );
+
+          await reorderOneGame(
+            newMember.guild,
+            'ark'
+          );
         }
       }
 
       // ======================================================
-      // GTA V
+      // GTA
       // ======================================================
 
       const oldGta =
@@ -773,6 +1107,15 @@ async function handleRoleChange(
         await createGtaPlayerSpace(
           newMember
         );
+
+        await sleep(
+          500
+        );
+
+        await reorderOneGame(
+          newMember.guild,
+          'gta'
+        );
       }
 
       if (
@@ -785,6 +1128,15 @@ async function handleRoleChange(
 
         await deleteGtaPlayerSpace(
           newMember
+        );
+
+        await sleep(
+          500
+        );
+
+        await reorderOneGame(
+          newMember.guild,
+          'gta'
         );
       }
 
@@ -816,6 +1168,15 @@ async function handleRoleChange(
           newMember,
           ATS_GAME
         );
+
+        await sleep(
+          500
+        );
+
+        await reorderOneGame(
+          newMember.guild,
+          'ats'
+        );
       }
 
       if (
@@ -829,6 +1190,15 @@ async function handleRoleChange(
         await deleteAtsEtsPlayerSpace(
           newMember,
           ATS_GAME
+        );
+
+        await sleep(
+          500
+        );
+
+        await reorderOneGame(
+          newMember.guild,
+          'ats'
         );
       }
 
@@ -860,6 +1230,15 @@ async function handleRoleChange(
           newMember,
           ETS2_GAME
         );
+
+        await sleep(
+          500
+        );
+
+        await reorderOneGame(
+          newMember.guild,
+          'ets2'
+        );
       }
 
       if (
@@ -873,6 +1252,15 @@ async function handleRoleChange(
         await deleteAtsEtsPlayerSpace(
           newMember,
           ETS2_GAME
+        );
+
+        await sleep(
+          500
+        );
+
+        await reorderOneGame(
+          newMember.guild,
+          'ets2'
         );
       }
     }
@@ -899,6 +1287,14 @@ async function handleMemberAdd(
     async () => {
       await syncMember(
         member
+      );
+
+      await sleep(
+        500
+      );
+
+      await reorderAllPlayerSpaces(
+        member.guild
       );
     }
   );
@@ -939,8 +1335,28 @@ function startPlayerSpaces(
     `🇪🇺 ETS2 → ${ETS2_ROLE_ID}`
   );
 
+  console.log(
+    '🗂️ Catégories principales :'
+  );
+
+  console.log(
+    `🦖 ARK → ${ARK_MAIN_CATEGORY_ID}`
+  );
+
+  console.log(
+    `🚘 GTA V → ${GTA_MAIN_CATEGORY_ID}`
+  );
+
+  console.log(
+    `🇺🇸 ATS → ${ATS_MAIN_CATEGORY_ID}`
+  );
+
+  console.log(
+    `🇪🇺 ETS2 → ${ETS2_MAIN_CATEGORY_ID}`
+  );
+
   // ==========================================================
-  // UN SEUL LISTENER DE CHANGEMENT DE RÔLE
+  // CHANGEMENT DE RÔLE
   // ==========================================================
 
   client.on(
@@ -984,7 +1400,7 @@ function startPlayerSpaces(
   );
 
   // ==========================================================
-  // UNE SEULE SYNCHRONISATION AU DÉMARRAGE
+  // SYNCHRONISATION INITIALE
   // ==========================================================
 
   setTimeout(
@@ -1013,6 +1429,8 @@ module.exports = {
   syncAllGuilds,
   syncGuild,
   syncMember,
+  reorderAllPlayerSpaces,
+  reorderGameSpaces,
 
   createArkPlayerSpace,
   deleteArkPlayerSpace,
