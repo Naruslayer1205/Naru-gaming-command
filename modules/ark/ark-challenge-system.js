@@ -1284,7 +1284,107 @@ async function updateChallengeChannel(
   }
 }
 
+
+// ─────────────────────────────────────
+// DÉMARRAGE AUTOMATIQUE
+// ─────────────────────────────────────
+
+function startArkChallengeSystem(
+  client
+) {
+  if (
+    client.__arkChallengeSystemStarted
+  ) {
+    return;
+  }
+
+  client.__arkChallengeSystemStarted =
+    true;
+
+  console.log(
+    '🎯 Système de défis ARK démarré'
+  );
+
+  setTimeout(
+    async () => {
+      try {
+        await updateLeaderboard(
+          client
+        );
+      } catch (error) {
+        console.error(
+          '❌ Erreur initialisation classement ARK :',
+          error
+        );
+      }
+    },
+    5000
+  );
+
+  const interval =
+    setInterval(
+      async () => {
+        try {
+          const data =
+            loadData();
+
+          let changed =
+            false;
+
+          for (
+            const player
+            of Object.values(
+              data.players
+            )
+          ) {
+            const previousMonth =
+              player.month;
+
+            resetMonthIfNeeded(
+              data,
+              player
+            );
+
+            if (
+              previousMonth !==
+              player.month
+            ) {
+              changed =
+                true;
+            }
+          }
+
+          if (changed) {
+            saveData(
+              data
+            );
+
+            await updateLeaderboard(
+              client,
+              data
+            );
+          }
+
+        } catch (error) {
+          console.error(
+            '❌ Erreur timer défis ARK :',
+            error
+          );
+        }
+      },
+      60 * 1000
+    );
+
+  if (
+    typeof interval.unref ===
+    'function'
+  ) {
+    interval.unref();
+  }
+}
+
 module.exports = {
+  startArkChallengeSystem,
   updateChallengeChannel,
   updateLeaderboard
 };
