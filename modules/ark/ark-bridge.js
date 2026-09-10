@@ -592,14 +592,29 @@ async function updateArkDiscord(
   }
 
   if (dinos) {
-    await upsertMessage(
+    await upsertMultipleMessages(
       client,
       member.id,
       dinos,
       'dinos',
-      buildDinoMessage(
+      buildDinoMessages(
         state
       )
+    );
+  }
+
+  if (challenges) {
+    const challengeMetrics =
+      state.ark
+        ?.challengeMetrics ||
+      state.challengeMetrics ||
+      {};
+
+    await updateChallengeChannel(
+      client,
+      member,
+      category,
+      challengeMetrics
     );
   }
 
@@ -613,26 +628,6 @@ async function updateArkDiscord(
         state
       )
     );
-  }
-
-  if (
-    challenges
-  ) {
-    const challengeMetrics =
-      state.ark
-        ?.challengeMetrics ||
-      null;
-
-    if (
-      challengeMetrics
-    ) {
-      await updateChallengeChannel(
-        client,
-        member,
-        category,
-        challengeMetrics
-      );
-    }
   }
 
   if (journal) {
@@ -726,6 +721,109 @@ async function upsertMessage(
 }
 
 // ─────────────────────────────────────
+// MESSAGES MULTIPLES
+// ─────────────────────────────────────
+
+async function upsertMultipleMessages(
+  client,
+  userId,
+  channel,
+  type,
+  contents
+) {
+  const baseKey =
+    `${userId}:${type}`;
+
+  let existingMessages =
+    [];
+
+  try {
+    const fetched =
+      await channel.messages.fetch({
+        limit: 100
+      });
+
+    existingMessages =
+      Array.from(
+        fetched.values()
+      )
+        .filter(
+          message =>
+            message.author.id ===
+            client.user.id
+        )
+        .sort(
+          (a, b) =>
+            a.createdTimestamp -
+            b.createdTimestamp
+        );
+
+  } catch {
+    existingMessages =
+      [];
+  }
+
+  for (
+    let i = 0;
+    i < contents.length;
+    i++
+  ) {
+    const content =
+      contents[i];
+
+    const existing =
+      existingMessages[i];
+
+    if (existing) {
+      await existing.edit(
+        content
+      );
+
+      client.arkBridge
+        .messages
+        .set(
+          `${baseKey}:${i}`,
+          existing.id
+        );
+
+    } else {
+      const created =
+        await channel.send(
+          content
+        );
+
+      client.arkBridge
+        .messages
+        .set(
+          `${baseKey}:${i}`,
+          created.id
+        );
+    }
+  }
+
+  if (
+    existingMessages.length >
+    contents.length
+  ) {
+    const extraMessages =
+      existingMessages.slice(
+        contents.length
+      );
+
+    for (
+      const message
+      of extraMessages
+    ) {
+      try {
+        await message.delete();
+      } catch {
+        // rien
+      }
+    }
+  }
+}
+
+// ─────────────────────────────────────
 // PERSONNAGE
 // ─────────────────────────────────────
 
@@ -812,7 +910,7 @@ function buildWorldMessage(
 // DINOS
 // ─────────────────────────────────────
 
-function buildDinoMessage(
+function buildDinoMessages(
   state
 ) {
   const dinos =
@@ -822,30 +920,32 @@ function buildDinoMessage(
 
   if (!dinos.length) {
     return [
-      '# 🦕 Dinos apprivoisés',
-      '',
-      'Aucun dino apprivoisé détecté actuellement.',
-      '',
-      `🔄 Dernière synchronisation : <t:${unix(state.receivedAt)}:R>`
-    ].join('\n');
+      [
+        '# 🦕 Dinos apprivoisés',
+        '',
+        'Aucun dino apprivoisé détecté actuellement.',
+        '',
+        `🔄 Dernière synchronisation : <t:${unix(state.receivedAt)}:R>`
+      ].join('\n')
+    ];
   }
 
-  const lines = [
+  const messages =
+    [];
+
+  let currentLines = [
     '# 🦕 Dinos apprivoisés',
     '',
     `**Total : ${dinos.length}**`,
     ''
   ];
 
-  const max =
-    Math.min(
-      dinos.length,
-      20
-    );
+  const MAX_LENGTH =
+    1850;
 
   for (
     let i = 0;
-    i < max;
+    i < dinos.length;
     i++
   ) {
     const dino =
@@ -919,59 +1019,63 @@ function buildDinoMessage(
         dino
       );
 
-    lines.push(
-      `## ${i + 1}. ${value(dinoName, 'Sans nom')}`
-    );
+    const dinoBlock = [
+      `## ${i + 1}. ${value(dinoName, 'Sans nom')}`,
+      `**Espèce :** ${cleanSpecies(species)}`,
+      `**Niveau :** ${value(level)}`,
+      `**Sexe :** ${translateSex(dino.sex)}`,
+      `**Propriétaire :** ${value(owner)}`,
+      `**Imprint :** ${formatPercent(imprint)}`,
+      `**Mutations :** ${father + mother} (${father} père / ${mother} mère)`,
+      `**Position :** ${formatPositionInline(position)}`,
+      ''
+    ];
 
-    lines.push(
-      `**Espèce :** ${cleanSpecies(species)}`
-    );
+    const footer =
+      `🔄 Dernière synchronisation : <t:${unix(state.receivedAt)}:R>`;
 
-    lines.push(
-      `**Niveau :** ${value(level)}`
-    );
+    const projected =
+      [
+        ...currentLines,
+        ...dinoBlock,
+        footer
+      ].join('\n');
 
-    lines.push(
-      `**Sexe :** ${translateSex(dino.sex)}`
-    );
+    if (
+      projected.length >
+      MAX_LENGTH &&
+      currentLines.length > 4
+    ) {
+      currentLines.push(
+        footer
+      );
 
-    lines.push(
-      `**Propriétaire :** ${value(owner)}`
-    );
+      messages.push(
+        currentLines.join('\n')
+      );
 
-    lines.push(
-      `**Imprint :** ${formatPercent(imprint)}`
-    );
+      currentLines = [
+        '# 🦕 Dinos apprivoisés',
+        '',
+        `**Suite — Total : ${dinos.length}**`,
+        ''
+      ];
+    }
 
-    lines.push(
-      `**Mutations :** ${father + mother} (${father} père / ${mother} mère)`
+    currentLines.push(
+      ...dinoBlock
     );
-
-    lines.push(
-      `**Position :** ${formatPositionInline(position)}`
-    );
-
-    lines.push('');
   }
 
-  if (
-    dinos.length >
-    max
-  ) {
-    lines.push(
-      `*${dinos.length - max} autre(s) dino(s) non affiché(s) pour éviter de dépasser la limite Discord.*`
-    );
-
-    lines.push('');
-  }
-
-  lines.push(
+  currentLines.push(
     `🔄 Dernière synchronisation : <t:${unix(state.receivedAt)}:R>`
   );
 
-  return limitDiscord(
-    lines.join('\n')
+  messages.push(
+    currentLines.join('\n')
   );
+
+  return messages;
 }
 
 // ─────────────────────────────────────
