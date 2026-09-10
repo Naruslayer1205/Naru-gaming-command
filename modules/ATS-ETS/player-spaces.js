@@ -30,40 +30,24 @@ const DATA_FILE =
   );
 
 // ============================================================
-// CONFIGURATION DES ESPACES
+// CONFIGURATION
 // ============================================================
 
 const GAMES = {
   ats: {
     key: 'ats',
-
-    name:
-      'American Truck Simulator',
-
-    shortName:
-      'ATS',
-
-    roleId:
-      ATS_ROLE_ID,
-
-    categoryEmoji:
-      '🇺🇸'
+    name: 'American Truck Simulator',
+    shortName: 'ATS',
+    roleId: ATS_ROLE_ID,
+    categoryEmoji: '🇺🇸'
   },
 
   ets2: {
     key: 'ets2',
-
-    name:
-      'Euro Truck Simulator 2',
-
-    shortName:
-      'ETS2',
-
-    roleId:
-      ETS2_ROLE_ID,
-
-    categoryEmoji:
-      '🇪🇺'
+    name: 'Euro Truck Simulator 2',
+    shortName: 'ETS2',
+    roleId: ETS2_ROLE_ID,
+    categoryEmoji: '🇪🇺'
   }
 };
 
@@ -260,7 +244,7 @@ function buildPermissions(
 }
 
 // ============================================================
-// CRÉATION CATÉGORIE
+// CRÉATION ESPACE
 // ============================================================
 
 async function createPlayerSpace(
@@ -395,7 +379,7 @@ async function createPlayerSpace(
           '',
           '🔴 **Bridge : non connecté**',
           '',
-          'Lorsque le Naru ATS/ETS Bridge sera installé sur ton PC, ce salon affichera automatiquement son état de connexion.'
+          'Le bridge sera détecté automatiquement quand il sera installé sur ton PC.'
         ].join('\n')
     });
   }
@@ -404,13 +388,11 @@ async function createPlayerSpace(
     `✅ Espace ${game.shortName} créé pour ${member.user.tag}`
   );
 
-  return data[
-    playerKey
-  ];
+  return data[playerKey];
 }
 
 // ============================================================
-// SUPPRESSION CATÉGORIE
+// SUPPRESSION ESPACE
 // ============================================================
 
 async function deletePlayerSpace(
@@ -494,9 +476,7 @@ async function deletePlayerSpace(
     }
   }
 
-  delete data[
-    playerKey
-  ];
+  delete data[playerKey];
 
   saveData(
     data
@@ -508,7 +488,7 @@ async function deletePlayerSpace(
 }
 
 // ============================================================
-// SYNCHRONISATION D'UN MEMBRE
+// SYNCHRO MEMBRE
 // ============================================================
 
 async function syncMemberGame(
@@ -516,6 +496,7 @@ async function syncMemberGame(
   game
 ) {
   if (
+    !member ||
     member.user?.bot
   ) {
     return;
@@ -536,14 +517,12 @@ async function syncMemberGame(
       game.key
     );
 
-  const hasSpace =
-    Boolean(
-      data[playerKey]
-    );
+  const playerData =
+    data[playerKey];
 
   if (
     hasRole &&
-    !hasSpace
+    !playerData
   ) {
     await createPlayerSpace(
       member,
@@ -555,19 +534,17 @@ async function syncMemberGame(
 
   if (
     hasRole &&
-    hasSpace
+    playerData
   ) {
     const category =
       member.guild.channels.cache.get(
-        data[playerKey].categoryId
+        playerData.categoryId
       );
 
     if (
       !category
     ) {
-      delete data[
-        playerKey
-      ];
+      delete data[playerKey];
 
       saveData(
         data
@@ -584,7 +561,7 @@ async function syncMemberGame(
 
   if (
     !hasRole &&
-    hasSpace
+    playerData
   ) {
     await deletePlayerSpace(
       member,
@@ -608,34 +585,55 @@ async function syncMember(
 }
 
 // ============================================================
-// SYNCHRONISATION SERVEUR
+// SYNCHRO CACHE
 // ============================================================
 
-async function syncGuild(
+async function syncGuildFromCache(
   guild
 ) {
   console.log(
     `🔄 Vérification espaces ATS/ETS2 sur ${guild.name}...`
   );
 
-  let members;
+  const members =
+    guild.members.cache;
 
-  try {
-    members =
-      await guild.members.fetch();
-  } catch (error) {
-    console.error(
-      `❌ Impossible de récupérer les membres de ${guild.name} :`,
-      error.message
-    );
+  console.log(
+    `👥 ${members.size} membre(s) présents dans le cache Discord.`
+  );
 
-    return;
-  }
+  let atsCount =
+    0;
+
+  let ets2Count =
+    0;
 
   for (
     const member
     of members.values()
   ) {
+    if (
+      member.user?.bot
+    ) {
+      continue;
+    }
+
+    if (
+      member.roles.cache.has(
+        ATS_ROLE_ID
+      )
+    ) {
+      atsCount++;
+    }
+
+    if (
+      member.roles.cache.has(
+        ETS2_ROLE_ID
+      )
+    ) {
+      ets2Count++;
+    }
+
     try {
       await syncMember(
         member
@@ -649,12 +647,20 @@ async function syncGuild(
   }
 
   console.log(
+    `🇺🇸 ${atsCount} membre(s) avec le rôle ATS`
+  );
+
+  console.log(
+    `🇪🇺 ${ets2Count} membre(s) avec le rôle ETS2`
+  );
+
+  console.log(
     `✅ Vérification ATS/ETS2 terminée sur ${guild.name}`
   );
 }
 
 // ============================================================
-// RECHERCHE ESPACE POUR LE FUTUR BRIDGE
+// RECHERCHE ESPACE
 // ============================================================
 
 function findPlayerSpace(
@@ -697,8 +703,8 @@ function startAtsEtsPlayerSpaces(
     `🇪🇺 Rôle ETS2 → ${ETS2_ROLE_ID}`
   );
 
-  // Vérifie tous les joueurs déjà présents
-  // lorsque le bot démarre.
+  // On laisse ARK / GTA terminer leurs propres
+  // vérifications avant de lancer ATS / ETS2.
 
   setTimeout(
     async () => {
@@ -706,15 +712,24 @@ function startAtsEtsPlayerSpaces(
         const guild
         of client.guilds.cache.values()
       ) {
-        await syncGuild(
-          guild
-        );
+        try {
+          await syncGuildFromCache(
+            guild
+          );
+        } catch (error) {
+          console.error(
+            '❌ ATS/ETS2 Player Spaces : erreur synchronisation :',
+            error
+          );
+        }
       }
     },
-    3000
+    15000
   );
 
-  // Détection ajout / retrait d'un rôle.
+  // ==========================================================
+  // AJOUT / RETRAIT DE RÔLE
+  // ==========================================================
 
   client.on(
     'guildMemberUpdate',
@@ -771,8 +786,9 @@ function startAtsEtsPlayerSpaces(
     }
   );
 
-  // Si un joueur rejoint avec un rôle
-  // déjà attribué par un autre système.
+  // ==========================================================
+  // ARRIVÉE D'UN MEMBRE
+  // ==========================================================
 
   client.on(
     'guildMemberAdd',
