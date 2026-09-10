@@ -15,22 +15,12 @@ const startArkUpdates =
 const startArkBridge =
   require('./modules/ark/ark-bridge');
 
-const {
-  startArkPlayerSpaces
-} =
-  require('./modules/ark/player-spaces');
-
 // ─────────────────────────────
 // GTA V
 // ─────────────────────────────
 
 const startGtaUpdates =
   require('./modules/gta/gta-updates');
-
-const {
-  startGtaPlayerSpaces
-} =
-  require('./modules/gta/player-spaces');
 
 const {
   startGtaChallenges
@@ -51,10 +41,14 @@ const {
 } =
   require('./modules/ATS-ETS/ats-ets-updates');
 
+// ─────────────────────────────
+// PLAYER SPACES GÉNÉRAL
+// ─────────────────────────────
+
 const {
-  startAtsEtsPlayerSpaces
+  startPlayerSpaces
 } =
-  require('./modules/ATS-ETS/player-spaces');
+  require('./modules/player-spaces');
 
 // ─────────────────────────────
 // CLIENT DISCORD
@@ -106,19 +100,11 @@ client.once(
       readyClient
     );
 
-    startArkPlayerSpaces(
-      readyClient
-    );
-
     // ─────────────────────────────
     // GTA V
     // ─────────────────────────────
 
     startGtaUpdates(
-      readyClient
-    );
-
-    startGtaPlayerSpaces(
       readyClient
     );
 
@@ -138,7 +124,12 @@ client.once(
       readyClient
     );
 
-    startAtsEtsPlayerSpaces(
+    // ─────────────────────────────
+    // PLAYER SPACES
+    // ARK → GTA → ATS → ETS2
+    // ─────────────────────────────
+
+    startPlayerSpaces(
       readyClient
     );
   }
@@ -179,7 +170,7 @@ process.on(
 );
 
 // ─────────────────────────────
-// TOKEN DISCORD
+// TOKEN
 // ─────────────────────────────
 
 if (
