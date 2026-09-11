@@ -1,16 +1,8 @@
 const http = require('http');
 
 const {
-  handleGtaRequest
-} = require('../gta/gta-link');
-
-const {
   findPlayerCategory
 } = require('./player-spaces');
-
-const {
-  updateChallengeChannel
-} = require('./ark-challenge-system');
 
 const PORT =
   Number(
@@ -41,8 +33,8 @@ const CHANNELS = {
   dinos:
     '🦕・dinos',
 
-  challenges:
-    '🎯・défis',
+  mods:
+    '🧩・mods',
 
   journal:
     '💀・journal',
@@ -101,27 +93,6 @@ function startArkBridge(
         res
       ) => {
         try {
-
-          // ─────────────────────────
-          // ROUTES GTA
-          // ─────────────────────────
-
-          if (
-            req.url &&
-            req.url.startsWith(
-              '/gta/'
-            )
-          ) {
-            const handled =
-              await handleGtaRequest(
-                req,
-                res
-              );
-
-            if (handled) {
-              return;
-            }
-          }
 
           // ─────────────────────────
           // STATUS API
@@ -316,6 +287,7 @@ function startArkBridge(
               receivedAt
             };
 
+            // État précédent pour le journal
             const previous =
               client.arkBridge
                 .previousStates
@@ -329,6 +301,10 @@ function startArkBridge(
                 discordUserId,
                 state
               );
+
+            // ─────────────────────────
+            // DISCORD
+            // ─────────────────────────
 
             await updateArkDiscord(
               client,
@@ -545,11 +521,11 @@ async function updateArkDiscord(
       CHANNELS.dinos
     );
 
-  const challenges =
+  const mods =
     getChannel(
       guild,
       category,
-      CHANNELS.challenges
+      CHANNELS.mods
     );
 
   const journal =
@@ -592,29 +568,26 @@ async function updateArkDiscord(
   }
 
   if (dinos) {
-    await upsertMultipleMessages(
+    await upsertMessage(
       client,
       member.id,
       dinos,
       'dinos',
-      buildDinoMessages(
+      buildDinoMessage(
         state
       )
     );
   }
 
-  if (challenges) {
-    const challengeMetrics =
-      state.ark
-        ?.challengeMetrics ||
-      state.challengeMetrics ||
-      {};
-
-    await updateChallengeChannel(
+  if (mods) {
+    await upsertMessage(
       client,
-      member,
-      category,
-      challengeMetrics
+      member.id,
+      mods,
+      'mods',
+      buildModsMessage(
+        state
+      )
     );
   }
 
@@ -721,109 +694,6 @@ async function upsertMessage(
 }
 
 // ─────────────────────────────────────
-// MESSAGES MULTIPLES
-// ─────────────────────────────────────
-
-async function upsertMultipleMessages(
-  client,
-  userId,
-  channel,
-  type,
-  contents
-) {
-  const baseKey =
-    `${userId}:${type}`;
-
-  let existingMessages =
-    [];
-
-  try {
-    const fetched =
-      await channel.messages.fetch({
-        limit: 100
-      });
-
-    existingMessages =
-      Array.from(
-        fetched.values()
-      )
-        .filter(
-          message =>
-            message.author.id ===
-            client.user.id
-        )
-        .sort(
-          (a, b) =>
-            a.createdTimestamp -
-            b.createdTimestamp
-        );
-
-  } catch {
-    existingMessages =
-      [];
-  }
-
-  for (
-    let i = 0;
-    i < contents.length;
-    i++
-  ) {
-    const content =
-      contents[i];
-
-    const existing =
-      existingMessages[i];
-
-    if (existing) {
-      await existing.edit(
-        content
-      );
-
-      client.arkBridge
-        .messages
-        .set(
-          `${baseKey}:${i}`,
-          existing.id
-        );
-
-    } else {
-      const created =
-        await channel.send(
-          content
-        );
-
-      client.arkBridge
-        .messages
-        .set(
-          `${baseKey}:${i}`,
-          created.id
-        );
-    }
-  }
-
-  if (
-    existingMessages.length >
-    contents.length
-  ) {
-    const extraMessages =
-      existingMessages.slice(
-        contents.length
-      );
-
-    for (
-      const message
-      of extraMessages
-    ) {
-      try {
-        await message.delete();
-      } catch {
-        // rien
-      }
-    }
-  }
-}
-
-// ─────────────────────────────────────
 // PERSONNAGE
 // ─────────────────────────────────────
 
@@ -846,7 +716,7 @@ function buildCharacterMessage(
     `**Joueur Discord :** ${member}`,
     `**Personnage :** ${value(player.name)}`,
     `**Niveau :** ${value(player.level)}`,
-    `**XP :** ${number(player.experience)}`,
+    `**XP :** ${value(player.experience)}`,
     `**Sexe :** ${translateSex(player.sex)}`,
     `**Tribu :** ${value(player.tribe)}`,
     '',
@@ -910,7 +780,7 @@ function buildWorldMessage(
 // DINOS
 // ─────────────────────────────────────
 
-function buildDinoMessages(
+function buildDinoMessage(
   state
 ) {
   const dinos =
@@ -920,37 +790,40 @@ function buildDinoMessages(
 
   if (!dinos.length) {
     return [
-      [
-        '# 🦕 Dinos apprivoisés',
-        '',
-        'Aucun dino apprivoisé détecté actuellement.',
-        '',
-        `🔄 Dernière synchronisation : <t:${unix(state.receivedAt)}:R>`
-      ].join('\n')
-    ];
+      '# 🦕 Dinos apprivoisés',
+      '',
+      'Aucun dino apprivoisé détecté actuellement.',
+      '',
+      `🔄 Dernière synchronisation : <t:${unix(state.receivedAt)}:R>`
+    ].join('\n');
   }
 
-  const messages =
-    [];
-
-  let currentLines = [
+  const lines = [
     '# 🦕 Dinos apprivoisés',
     '',
     `**Total : ${dinos.length}**`,
     ''
   ];
 
-  const MAX_LENGTH =
-    1850;
+  const max =
+    Math.min(
+      dinos.length,
+      20
+    );
 
   for (
     let i = 0;
-    i < dinos.length;
+    i < max;
     i++
   ) {
     const dino =
       dinos[i] || {};
 
+    // arkparser utilise notamment :
+    // creature, lvl, tamer, tribe,
+    // mut-f, mut-m, lat, lon et ccc.
+    // On garde aussi les anciens noms
+    // pour rester compatible avec le Bridge.
     const dinoName =
       firstAvailable(
         dino.name,
@@ -1019,63 +892,136 @@ function buildDinoMessages(
         dino
       );
 
-    const dinoBlock = [
-      `## ${i + 1}. ${value(dinoName, 'Sans nom')}`,
-      `**Espèce :** ${cleanSpecies(species)}`,
-      `**Niveau :** ${value(level)}`,
-      `**Sexe :** ${translateSex(dino.sex)}`,
-      `**Propriétaire :** ${value(owner)}`,
-      `**Imprint :** ${formatPercent(imprint)}`,
-      `**Mutations :** ${father + mother} (${father} père / ${mother} mère)`,
-      `**Position :** ${formatPositionInline(position)}`,
-      ''
-    ];
-
-    const footer =
-      `🔄 Dernière synchronisation : <t:${unix(state.receivedAt)}:R>`;
-
-    const projected =
-      [
-        ...currentLines,
-        ...dinoBlock,
-        footer
-      ].join('\n');
-
-    if (
-      projected.length >
-      MAX_LENGTH &&
-      currentLines.length > 4
-    ) {
-      currentLines.push(
-        footer
-      );
-
-      messages.push(
-        currentLines.join('\n')
-      );
-
-      currentLines = [
-        '# 🦕 Dinos apprivoisés',
-        '',
-        `**Suite — Total : ${dinos.length}**`,
-        ''
-      ];
-    }
-
-    currentLines.push(
-      ...dinoBlock
+    lines.push(
+      `## ${i + 1}. ${value(dinoName, 'Sans nom')}`
     );
+
+    lines.push(
+      `**Espèce :** ${cleanSpecies(species)}`
+    );
+
+    lines.push(
+      `**Niveau :** ${value(level)}`
+    );
+
+    lines.push(
+      `**Sexe :** ${translateSex(dino.sex)}`
+    );
+
+    lines.push(
+      `**Propriétaire :** ${value(owner)}`
+    );
+
+    lines.push(
+      `**Imprint :** ${formatPercent(imprint)}`
+    );
+
+    lines.push(
+      `**Mutations :** ${father + mother} (${father} père / ${mother} mère)`
+    );
+
+    lines.push(
+      `**Position :** ${formatPositionInline(position)}`
+    );
+
+    lines.push('');
   }
 
-  currentLines.push(
+  if (
+    dinos.length >
+    max
+  ) {
+    lines.push(
+      `*${dinos.length - max} autre(s) dino(s) non affiché(s) pour éviter de dépasser la limite Discord.*`
+    );
+
+    lines.push('');
+  }
+
+  lines.push(
     `🔄 Dernière synchronisation : <t:${unix(state.receivedAt)}:R>`
   );
 
-  messages.push(
-    currentLines.join('\n')
+  return limitDiscord(
+    lines.join('\n')
+  );
+}
+
+
+// ─────────────────────────────────────
+// MODS
+// ─────────────────────────────────────
+
+function buildModsMessage(
+  state
+) {
+  const mods = state.ark?.mods || {};
+  const active = Array.isArray(mods.active)
+    ? mods.active
+    : [];
+
+  const lines = [
+    '# 🧩 Mods ARK actifs',
+    '',
+    `📦 **Mods actifs :** ${active.length}`
+  ];
+
+  if (mods.activeMapMod) {
+    const mapMod = active.find(
+      mod => String(mod.id) === String(mods.activeMapMod)
+    );
+
+    lines.push(
+      `🗺️ **Mod de map :** ${mapMod?.name || `Mod ${mods.activeMapMod}`} (${mods.activeMapMod})`
+    );
+  }
+
+  lines.push('');
+
+  if (!active.length) {
+    lines.push(
+      'Aucun mod actif détecté dans **GameUserSettings.ini**.'
+    );
+  } else {
+    active.forEach((mod, index) => {
+      const name = mod.name || `Mod ${mod.id}`;
+      const status = mod.installed
+        ? '✅ installé'
+        : '⚠️ dossier local non détecté';
+
+      lines.push(
+        `**${index + 1}. ${name}**`,
+        `ID : \`${value(mod.id)}\` • ${status}`
+      );
+
+      if (mod.build) {
+        lines.push(
+          `Build local : \`${value(mod.build)}\``
+        );
+      }
+
+      if (mod.isMapMod) {
+        lines.push('🗺️ Mod de map actif');
+      }
+
+      lines.push('');
+    });
+  }
+
+  if (mods.installedCount !== undefined) {
+    lines.push(
+      `💾 **Mods installés localement détectés :** ${value(mods.installedCount)}`,
+      ''
+    );
+  }
+
+  lines.push(
+    `🔄 Dernière synchronisation : <t:${unix(state.receivedAt)}:R>`
   );
 
-  return messages;
+  return limitDiscord(
+    lines.join('\n')
+  );
 }
 
 // ─────────────────────────────────────
@@ -1150,6 +1096,7 @@ async function updateJournal(
 
   const events = [];
 
+  // Map
   if (
     previous.map &&
     state.map &&
@@ -1160,6 +1107,7 @@ async function updateJournal(
     );
   }
 
+  // Niveau
   const oldLevel =
     previous.ark
       ?.players
@@ -1183,6 +1131,7 @@ async function updateJournal(
     );
   }
 
+  // Dinos
   const oldDinos =
     previous.ark
       ?.dinos
@@ -1213,6 +1162,7 @@ async function updateJournal(
     );
   }
 
+  // Structures
   const oldStructures =
     previous.ark
       ?.world
@@ -1292,14 +1242,14 @@ function number(
     return 'Non disponible';
   }
 
-  const numericValue =
+  const value =
     Number(
       input
     );
 
   if (
     Number.isNaN(
-      numericValue
+      value
     )
   ) {
     return String(
@@ -1307,7 +1257,7 @@ function number(
     );
   }
 
-  return numericValue.toLocaleString(
+  return value.toLocaleString(
     'fr-FR',
     {
       maximumFractionDigits:
@@ -1444,19 +1394,11 @@ function getDinoPosition(
 }
 
 function formatPercent(
-  input
+  value
 ) {
-  if (
-    input === null ||
-    input === undefined ||
-    input === ''
-  ) {
-    return 'Non disponible';
-  }
-
   const numberValue =
     Number(
-      input
+      value
     );
 
   if (
