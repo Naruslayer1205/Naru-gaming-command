@@ -311,7 +311,8 @@ function startArkBridge(
               member,
               category,
               state,
-              previous
+              previous,
+              body.syncScope || 'full'
             );
 
             client.arkBridge
@@ -495,7 +496,8 @@ async function updateArkDiscord(
   member,
   category,
   state,
-  previous
+  previous,
+  syncScope = 'full'
 ) {
   const guild =
     member.guild;
@@ -541,6 +543,25 @@ async function updateArkDiscord(
       category,
       CHANNELS.commands
     );
+
+  // Synchronisation légère envoyée toutes les 30 secondes :
+  // on ne touche qu'au salon 🧩・mods afin d'éviter d'éditer
+  // tous les messages Discord inutilement.
+  if (syncScope === 'mods') {
+    if (mods) {
+      await upsertMessage(
+        client,
+        member.id,
+        mods,
+        'mods',
+        buildModsMessage(
+          state
+        )
+      );
+    }
+
+    return;
+  }
 
   if (character) {
     await upsertMessage(
@@ -966,13 +987,20 @@ function buildModsMessage(
     `📦 **Mods actifs :** ${active.length}`
   ];
 
-  if (mods.activeMapMod) {
+  if (
+    mods.activeMapMod &&
+    String(mods.activeMapMod) !== '0'
+  ) {
     const mapMod = active.find(
       mod => String(mod.id) === String(mods.activeMapMod)
     );
 
     lines.push(
       `🗺️ **Mod de map :** ${mapMod?.name || `Mod ${mods.activeMapMod}`} (${mods.activeMapMod})`
+    );
+  } else {
+    lines.push(
+      '🗺️ **Mod de map :** Aucun'
     );
   }
 
