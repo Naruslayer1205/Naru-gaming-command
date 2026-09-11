@@ -4,6 +4,11 @@ const {
   findPlayerCategory
 } = require('./player-spaces');
 
+const {
+  updateChallengeChannel,
+  startArkChallengeSystem
+} = require('./ark-challenge-system');
+
 const PORT =
   Number(
     process.env.ARK_BRIDGE_PORT
@@ -84,6 +89,20 @@ function startArkBridge(
       messages:
         new Map()
     };
+  }
+
+  // Démarrage du système automatique de défis ARK.
+  // Toutes les 30 secondes, il compare la date affichée
+  // dans le message Discord à la date actuelle de Paris.
+  try {
+    startArkChallengeSystem(
+      client
+    );
+  } catch (error) {
+    console.error(
+      '❌ Impossible de démarrer le système de défis ARK :',
+      error
+    );
   }
 
   const server =
