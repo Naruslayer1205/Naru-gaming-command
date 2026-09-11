@@ -1286,6 +1286,245 @@ async function updateChallengeChannel(
 
 
 // ─────────────────────────────────────
+// MAINTENANCE QUOTIDIENNE
+// ─────────────────────────────────────
+
+function findChallengeChannelForMember(
+  member
+) {
+  if (!member?.guild) {
+    return null;
+  }
+
+  const channels =
+    member.guild.channels.cache.filter(
+      channel =>
+        channel.name ===
+          '🎯・défis' &&
+        channel.isTextBased?.()
+    );
+
+  for (
+    const channel
+    of channels.values()
+  ) {
+    const parent =
+      channel.parent;
+
+    if (!parent) {
+      continue;
+    }
+
+    const memberOverwrite =
+      parent
+        .permissionOverwrites
+        ?.cache
+        ?.get(
+          member.id
+        );
+
+    if (memberOverwrite) {
+      return channel;
+    }
+  }
+
+  return null;
+}
+
+async function refreshDailyChallengeMessage(
+  client,
+  player
+) {
+  for (
+    const guild
+    of client.guilds.cache.values()
+  ) {
+    let member =
+      null;
+
+    try {
+      member =
+        await guild.members.fetch(
+          player.userId
+        );
+    } catch {
+      member =
+        null;
+    }
+
+    if (
+      !member ||
+      member.user.bot
+    ) {
+      continue;
+    }
+
+    if (
+      ARK_ROLE_ID &&
+      !member.roles.cache.has(
+        ARK_ROLE_ID
+      )
+    ) {
+      continue;
+    }
+
+    const channel =
+      findChallengeChannelForMember(
+        member
+      );
+
+    if (!channel) {
+      continue;
+    }
+
+    const content =
+      buildChallengeMessage(
+        player,
+        {}
+      );
+
+    await upsertChallengeMessage(
+      client,
+      channel,
+      content
+    );
+
+    return true;
+  }
+
+  return false;
+}
+
+let maintenanceRunning =
+  false;
+
+async function runDailyChallengeMaintenance(
+  client
+) {
+  if (maintenanceRunning) {
+    return;
+  }
+
+  maintenanceRunning =
+    true;
+
+  try {
+    const data =
+      loadData();
+
+    let dataChanged =
+      false;
+
+    let leaderboardChanged =
+      false;
+
+    const playersToRefresh =
+      [];
+
+    for (
+      const player
+      of Object.values(
+        data.players
+      )
+    ) {
+      const previousMonth =
+        player.month;
+
+      const previousDate =
+        player.currentDate;
+
+      resetMonthIfNeeded(
+        data,
+        player
+      );
+
+      const dailyChanged =
+        assignDailyChallenges(
+          player
+        );
+
+      if (
+        previousMonth !==
+        player.month
+      ) {
+        leaderboardChanged =
+          true;
+
+        dataChanged =
+          true;
+      }
+
+      if (
+        dailyChanged ||
+        previousDate !==
+          player.currentDate
+      ) {
+        player.lastUpdatedAt =
+          new Date()
+            .toISOString();
+
+        playersToRefresh.push(
+          player
+        );
+
+        dataChanged =
+          true;
+
+        console.log(
+          `🎲 Nouveaux défis ARK pour ${player.displayName || player.userId} : ${player.currentDate}`
+        );
+      }
+    }
+
+    if (dataChanged) {
+      saveData(
+        data
+      );
+    }
+
+    for (
+      const player
+      of playersToRefresh
+    ) {
+      try {
+        const refreshed =
+          await refreshDailyChallengeMessage(
+            client,
+            player
+          );
+
+        if (!refreshed) {
+          console.log(
+            `⚠️ Impossible de trouver le salon défis ARK de ${player.displayName || player.userId}`
+          );
+        }
+      } catch (error) {
+        console.error(
+          `❌ Erreur actualisation quotidienne défis ARK pour ${player.displayName || player.userId} :`,
+          error
+        );
+      }
+    }
+
+    if (leaderboardChanged) {
+      await updateLeaderboard(
+        client,
+        data
+      );
+    }
+
+  } catch (error) {
+    console.error(
+      '❌ Erreur maintenance quotidienne défis ARK :',
+      error
+    );
+  } finally {
+    maintenanceRunning =
+      false;
+  }
+}
+
+// ─────────────────────────────────────
 // DÉMARRAGE AUTOMATIQUE
 // ─────────────────────────────────────
 
@@ -1308,12 +1547,16 @@ function startArkChallengeSystem(
   setTimeout(
     async () => {
       try {
+        await runDailyChallengeMaintenance(
+          client
+        );
+
         await updateLeaderboard(
           client
         );
       } catch (error) {
         console.error(
-          '❌ Erreur initialisation classement ARK :',
+          '❌ Erreur initialisation défis ARK :',
           error
         );
       }
@@ -1324,55 +1567,11 @@ function startArkChallengeSystem(
   const interval =
     setInterval(
       async () => {
-        try {
-          const data =
-            loadData();
-
-          let changed =
-            false;
-
-          for (
-            const player
-            of Object.values(
-              data.players
-            )
-          ) {
-            const previousMonth =
-              player.month;
-
-            resetMonthIfNeeded(
-              data,
-              player
-            );
-
-            if (
-              previousMonth !==
-              player.month
-            ) {
-              changed =
-                true;
-            }
-          }
-
-          if (changed) {
-            saveData(
-              data
-            );
-
-            await updateLeaderboard(
-              client,
-              data
-            );
-          }
-
-        } catch (error) {
-          console.error(
-            '❌ Erreur timer défis ARK :',
-            error
-          );
-        }
+        await runDailyChallengeMaintenance(
+          client
+        );
       },
-      60 * 1000
+      30 * 1000
     );
 
   if (
