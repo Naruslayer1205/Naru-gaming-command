@@ -1232,11 +1232,29 @@ async function updateChallengeChannel(
         member
       );
 
+    const today =
+      getParisDateKey();
+
+    const metricsDate =
+      metrics?.date ??
+      metrics?.dateKey ??
+      null;
+
+    const currentMetrics =
+      (
+        metricsDate &&
+        metricsDate !== today
+      )
+        ? {}
+        : (
+            metrics ||
+            {}
+          );
+
     const result =
       processChallenges(
         player,
-        metrics ||
-          {}
+        currentMetrics
       );
 
     saveData(
@@ -1246,8 +1264,7 @@ async function updateChallengeChannel(
     const content =
       buildChallengeMessage(
         player,
-        metrics ||
-          {}
+        currentMetrics
       );
 
     await upsertChallengeMessage(
@@ -1286,247 +1303,330 @@ async function updateChallengeChannel(
 
 
 // ─────────────────────────────────────
-// MAINTENANCE QUOTIDIENNE
+// DÉMARRAGE AUTOMATIQUE
 // ─────────────────────────────────────
 
-function findChallengeChannelForMember(
-  member
+async function findPlayerChallengeContext(
+  client,
+  userId
 ) {
-  if (!member?.guild) {
-    return null;
-  }
-
-  const channels =
-    member.guild.channels.cache.filter(
-      channel =>
-        channel.name ===
-          '🎯・défis' &&
-        channel.isTextBased?.()
-    );
-
   for (
-    const channel
-    of channels.values()
+    const guild
+    of client.guilds.cache.values()
   ) {
-    const parent =
-      channel.parent;
-
-    if (!parent) {
-      continue;
-    }
-
-    const memberOverwrite =
-      parent
-        .permissionOverwrites
-        ?.cache
-        ?.get(
-          member.id
+    try {
+      const member =
+        await guild.members.fetch(
+          userId
         );
 
-    if (memberOverwrite) {
-      return channel;
+      if (
+        !member ||
+        member.user.bot ||
+        (
+          ARK_ROLE_ID &&
+          !member.roles.cache.has(
+            ARK_ROLE_ID
+          )
+        )
+      ) {
+        continue;
+      }
+
+      try {
+        await guild.channels.fetch();
+      } catch {
+        // Le cache existant suffit souvent.
+      }
+
+      const channel =
+        guild.channels.cache.find(
+          item =>
+            item &&
+            item.name ===
+              '🎯・défis' &&
+            typeof item.isTextBased ===
+              'function' &&
+            item.isTextBased() &&
+            item.parent &&
+            (
+              item.parent
+                .permissionOverwrites
+                ?.cache
+                ?.has(
+                  userId
+                ) ||
+              item
+                .permissionOverwrites
+                ?.cache
+                ?.has(
+                  userId
+                )
+            )
+        );
+
+      if (!channel) {
+        continue;
+      }
+
+      return {
+        member,
+        category:
+          channel.parent,
+        channel
+      };
+
+    } catch {
+      // Joueur absent de ce serveur.
     }
   }
 
   return null;
 }
 
-async function refreshDailyChallengeMessage(
+
+async function getChallengeMessageInfo(
   client,
-  player
+  channel
 ) {
-  for (
-    const guild
-    of client.guilds.cache.values()
-  ) {
-    let member =
-      null;
-
-    try {
-      member =
-        await guild.members.fetch(
-          player.userId
-        );
-    } catch {
-      member =
-        null;
-    }
-
-    if (
-      !member ||
-      member.user.bot
-    ) {
-      continue;
-    }
-
-    if (
-      ARK_ROLE_ID &&
-      !member.roles.cache.has(
-        ARK_ROLE_ID
-      )
-    ) {
-      continue;
-    }
-
-    const channel =
-      findChallengeChannelForMember(
-        member
-      );
-
-    if (!channel) {
-      continue;
-    }
-
-    const content =
-      buildChallengeMessage(
-        player,
-        {}
-      );
-
-    await upsertChallengeMessage(
-      client,
-      channel,
-      content
-    );
-
-    return true;
-  }
-
-  return false;
-}
-
-let maintenanceRunning =
-  false;
-
-async function runDailyChallengeMaintenance(
-  client
-) {
-  if (maintenanceRunning) {
-    return;
-  }
-
-  maintenanceRunning =
-    true;
+  let message =
+    null;
 
   try {
-    const data =
-      loadData();
+    const messages =
+      await channel.messages.fetch({
+        limit:
+          20
+      });
 
-    let dataChanged =
-      false;
+    message =
+      messages.find(
+        candidate =>
+          candidate.author.id ===
+            client.user.id &&
+          candidate.content.includes(
+            '# 🎯 Défis ARK'
+          )
+      ) ||
+      null;
 
-    let leaderboardChanged =
-      false;
+  } catch {
+    message =
+      null;
+  }
 
-    const playersToRefresh =
+  if (!message) {
+    return {
+      message:
+        null,
+
+      date:
+        null
+    };
+  }
+
+  const match =
+    message.content.match(
+      /📅\s*\*\*Défis du\s+(\d{4}-\d{2}-\d{2})\*\*/
+    ) ||
+    message.content.match(
+      /Défis du\s+(\d{4}-\d{2}-\d{2})/
+    );
+
+  return {
+    message,
+
+    date:
+      match?.[1] ??
+      null
+  };
+}
+
+function forceAssignDailyChallenges(
+  player
+) {
+  player.currentDate =
+    null;
+
+  player.daily =
+    [];
+
+  return assignDailyChallenges(
+    player
+  );
+}
+
+async function refreshDailyChallenges(
+  client
+) {
+  const data =
+    loadData();
+
+  const today =
+    getParisDateKey();
+
+  let dataChanged =
+    false;
+
+  let leaderboardChanged =
+    false;
+
+  for (
+    const player
+    of Object.values(
+      data.players
+    )
+  ) {
+    if (!player) {
+      continue;
+    }
+
+    player.previous ??= {
+      easy:
+        null,
+
+      medium:
+        null,
+
+      hard:
+        null
+    };
+
+    player.daily ??=
       [];
 
-    for (
-      const player
-      of Object.values(
-        data.players
-      )
+    player.completed ??= {
+      easy:
+        0,
+
+      medium:
+        0,
+
+      hard:
+        0
+    };
+
+    player.monthPoints =
+      Number(
+        player.monthPoints
+      ) || 0;
+
+    const previousMonth =
+      player.month;
+
+    resetMonthIfNeeded(
+      data,
+      player
+    );
+
+    if (
+      previousMonth !==
+      player.month
     ) {
-      const previousMonth =
-        player.month;
+      leaderboardChanged =
+        true;
 
-      const previousDate =
-        player.currentDate;
+      dataChanged =
+        true;
+    }
 
-      resetMonthIfNeeded(
-        data,
+    const context =
+      await findPlayerChallengeContext(
+        client,
+        player.userId
+      );
+
+    if (!context) {
+      continue;
+    }
+
+    const messageInfo =
+      await getChallengeMessageInfo(
+        client,
+        context.channel
+      );
+
+    const messageDate =
+      messageInfo.date;
+
+    const storedDate =
+      player.currentDate ??
+      null;
+
+    const messageDateMismatch =
+      messageDate !==
+      today;
+
+    const storedDateMismatch =
+      storedDate !==
+      today;
+
+    // La date du message Discord est la référence principale.
+    // Si elle ne correspond pas à la date actuelle de Paris,
+    // on génère immédiatement 3 nouveaux défis.
+    if (
+      messageDateMismatch
+    ) {
+      forceAssignDailyChallenges(
         player
       );
 
-      const dailyChanged =
-        assignDailyChallenges(
-          player
+      player.lastUpdatedAt =
+        new Date()
+          .toISOString();
+
+      dataChanged =
+        true;
+
+      const content =
+        buildChallengeMessage(
+          player,
+          {}
         );
 
-      if (
-        previousMonth !==
-        player.month
-      ) {
-        leaderboardChanged =
-          true;
-
-        dataChanged =
-          true;
-      }
-
-      if (
-        dailyChanged ||
-        previousDate !==
-          player.currentDate
-      ) {
-        player.lastUpdatedAt =
-          new Date()
-            .toISOString();
-
-        playersToRefresh.push(
-          player
-        );
-
-        dataChanged =
-          true;
-
-        console.log(
-          `🎲 Nouveaux défis ARK pour ${player.displayName || player.userId} : ${player.currentDate}`
-        );
-      }
-    }
-
-    if (dataChanged) {
-      saveData(
-        data
-      );
-    }
-
-    for (
-      const player
-      of playersToRefresh
-    ) {
-      try {
-        const refreshed =
-          await refreshDailyChallengeMessage(
-            client,
-            player
-          );
-
-        if (!refreshed) {
-          console.log(
-            `⚠️ Impossible de trouver le salon défis ARK de ${player.displayName || player.userId}`
-          );
-        }
-      } catch (error) {
-        console.error(
-          `❌ Erreur actualisation quotidienne défis ARK pour ${player.displayName || player.userId} :`,
-          error
-        );
-      }
-    }
-
-    if (leaderboardChanged) {
-      await updateLeaderboard(
+      await upsertChallengeMessage(
         client,
-        data
+        context.channel,
+        content
       );
+
+      console.log(
+        `🌅 Défis ARK renouvelés pour ${context.member.user.tag} : message=${messageDate || 'aucune date'} • aujourd'hui=${today}`
+      );
+
+      continue;
     }
 
-  } catch (error) {
-    console.error(
-      '❌ Erreur maintenance quotidienne défis ARK :',
-      error
+    // Répare aussi le JSON interne si Discord affiche déjà
+    // la bonne date mais que player.currentDate est en retard.
+    if (
+      storedDateMismatch
+    ) {
+      player.currentDate =
+        today;
+
+      dataChanged =
+        true;
+    }
+  }
+
+  if (
+    dataChanged
+  ) {
+    saveData(
+      data
     );
-  } finally {
-    maintenanceRunning =
-      false;
+  }
+
+  if (
+    leaderboardChanged
+  ) {
+    await updateLeaderboard(
+      client,
+      data
+    );
   }
 }
-
-// ─────────────────────────────────────
-// DÉMARRAGE AUTOMATIQUE
-// ─────────────────────────────────────
 
 function startArkChallengeSystem(
   client
@@ -1547,13 +1647,14 @@ function startArkChallengeSystem(
   setTimeout(
     async () => {
       try {
-        await runDailyChallengeMaintenance(
+        await refreshDailyChallenges(
           client
         );
 
         await updateLeaderboard(
           client
         );
+
       } catch (error) {
         console.error(
           '❌ Erreur initialisation défis ARK :',
@@ -1567,9 +1668,17 @@ function startArkChallengeSystem(
   const interval =
     setInterval(
       async () => {
-        await runDailyChallengeMaintenance(
-          client
-        );
+        try {
+          await refreshDailyChallenges(
+            client
+          );
+
+        } catch (error) {
+          console.error(
+            '❌ Erreur timer défis ARK :',
+            error
+          );
+        }
       },
       30 * 1000
     );
