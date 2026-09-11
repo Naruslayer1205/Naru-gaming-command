@@ -5,19 +5,11 @@ const {
   ActivityType
 } = require('discord.js');
 
-// ─────────────────────────────
-// ARK
-// ─────────────────────────────
-
 const startArkUpdates =
   require('./modules/ark/ark-updates');
 
 const startArkBridge =
   require('./modules/ark/ark-bridge');
-
-// ─────────────────────────────
-// GTA V
-// ─────────────────────────────
 
 const startGtaUpdates =
   require('./modules/gta/gta-updates');
@@ -32,34 +24,41 @@ const {
 } =
   require('./modules/gta/gta-link');
 
-// ─────────────────────────────
-// ATS / ETS2
-// ─────────────────────────────
-
 const {
   startAtsEtsUpdates
 } =
   require('./modules/ATS-ETS/ats-ets-updates');
 
-// ─────────────────────────────
-// PLAYER SPACES GÉNÉRAL
-// ─────────────────────────────
+const {
+  startAtsEtsLink
+} =
+  require('./modules/ATS-ETS/ats-ets-link');
+
+const {
+  startAtsEtsBridge
+} =
+  require('./modules/ATS-ETS/ats-ets-bridge');
 
 const {
   startPlayerSpaces
 } =
   require('./modules/player-spaces');
 
-// ─────────────────────────────
+// ============================================================
 // CLIENT DISCORD
-// ─────────────────────────────
+// ============================================================
 
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers
-  ]
-});
+const client =
+  new Client({
+    intents: [
+      GatewayIntentBits.Guilds,
+      GatewayIntentBits.GuildMembers
+    ]
+  });
+
+// ============================================================
+// READY
+// ============================================================
 
 client.once(
   Events.ClientReady,
@@ -80,6 +79,10 @@ client.once(
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
     );
 
+    // ========================================================
+    // ACTIVITÉ BOT
+    // ========================================================
+
     readyClient.user.setActivity({
       name:
         'Naru Gaming Command',
@@ -88,9 +91,9 @@ client.once(
         ActivityType.Watching
     });
 
-    // ─────────────────────────────
+    // ========================================================
     // ARK
-    // ─────────────────────────────
+    // ========================================================
 
     startArkUpdates(
       readyClient
@@ -100,9 +103,9 @@ client.once(
       readyClient
     );
 
-    // ─────────────────────────────
+    // ========================================================
     // GTA V
-    // ─────────────────────────────
+    // ========================================================
 
     startGtaUpdates(
       readyClient
@@ -116,18 +119,25 @@ client.once(
       readyClient
     );
 
-    // ─────────────────────────────
+    // ========================================================
     // ATS / ETS2
-    // ─────────────────────────────
+    // ========================================================
 
     startAtsEtsUpdates(
       readyClient
     );
 
-    // ─────────────────────────────
-    // PLAYER SPACES
-    // ARK → GTA → ATS → ETS2
-    // ─────────────────────────────
+    startAtsEtsLink(
+      readyClient
+    );
+
+    startAtsEtsBridge(
+      readyClient
+    );
+
+    // ========================================================
+    // PLAYER SPACES GÉNÉRAL
+    // ========================================================
 
     startPlayerSpaces(
       readyClient
@@ -135,9 +145,9 @@ client.once(
   }
 );
 
-// ─────────────────────────────
-// GESTION DES ERREURS
-// ─────────────────────────────
+// ============================================================
+// ERREURS DISCORD
+// ============================================================
 
 client.on(
   'error',
@@ -148,6 +158,10 @@ client.on(
     );
   }
 );
+
+// ============================================================
+// ERREURS NODE
+// ============================================================
 
 process.on(
   'unhandledRejection',
@@ -169,9 +183,9 @@ process.on(
   }
 );
 
-// ─────────────────────────────
+// ============================================================
 // TOKEN
-// ─────────────────────────────
+// ============================================================
 
 if (
   !process.env.DISCORD_TOKEN
@@ -180,8 +194,14 @@ if (
     '❌ Variable DISCORD_TOKEN manquante.'
   );
 
-  process.exit(1);
+  process.exit(
+    1
+  );
 }
+
+// ============================================================
+// CONNEXION
+// ============================================================
 
 client.login(
   process.env.DISCORD_TOKEN
