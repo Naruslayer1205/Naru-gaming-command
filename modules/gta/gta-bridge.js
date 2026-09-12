@@ -374,16 +374,28 @@ async function upsertGtaMessage(
   }
 
   if (message) {
-    await message.edit(content);
+    try {
+      await message.edit(content);
 
-    client.gtaBridge
-      .messages
-      .set(
-        key,
-        message.id
-      );
+      client.gtaBridge
+        .messages
+        .set(
+          key,
+          message.id
+        );
 
-    return;
+      return;
+    } catch (error) {
+      // Le message a pu être supprimé entre le fetch et l'edit.
+      // Discord renvoie alors 10008 (Unknown Message).
+      if (error?.code !== 10008) {
+        throw error;
+      }
+
+      client.gtaBridge
+        .messages
+        .delete(key);
+    }
   }
 
   const newMessage =
@@ -513,65 +525,22 @@ function buildModsMessage(
   const mods =
     state.mods || {};
 
-  const root =
-    Array.isArray(mods.root)
-      ? mods.root
-      : [];
-
+  // On affiche UNIQUEMENT le contenu du dossier GTA\scripts.
+  // Toute ancienne donnée `mods.root` reçue d'un ancien plugin est ignorée.
   const scripts =
     Array.isArray(mods.scripts)
       ? mods.scripts
       : [];
 
   const total =
-    Number.isFinite(
-      Number(mods.count)
-    )
-      ? Number(mods.count)
-      : root.length + scripts.length;
+    scripts.length;
 
   const lines = [
     '# 🧩 Mods GTA V',
     '',
-    `📦 **Mods détectés : ${total}**`,
+    `📦 **Mods détectés dans scripts : ${total}**`,
     ''
   ];
-
-  if (root.length) {
-    lines.push(
-      '## 📁 Racine GTA',
-      ''
-    );
-
-    for (
-      const mod
-      of root.slice(0, 25)
-    ) {
-      const name =
-        value(
-          mod?.name || mod?.file,
-          'Mod inconnu'
-        );
-
-      const type =
-        value(
-          mod?.type,
-          'Mod'
-        );
-
-      lines.push(
-        `• **${name}** — ${type}`
-      );
-    }
-
-    if (root.length > 25) {
-      lines.push(
-        `• … +${root.length - 25} autre(s)`
-      );
-    }
-
-    lines.push('');
-  }
 
   if (scripts.length) {
     lines.push(
@@ -607,11 +576,9 @@ function buildModsMessage(
     }
 
     lines.push('');
-  }
-
-  if (!root.length && !scripts.length) {
+  } else {
     lines.push(
-      'Aucun mod détecté actuellement.',
+      'Aucun mod détecté dans le dossier scripts.',
       ''
     );
   }
