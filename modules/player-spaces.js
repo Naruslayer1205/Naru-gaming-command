@@ -40,6 +40,16 @@ const {
 } =
   require('./ATS-ETS/player-spaces');
 
+// ─────────────────────────────
+// ACOLONY
+// ─────────────────────────────
+
+const {
+  createAColonyPlayerSpace,
+  deleteAColonyPlayerSpace
+} =
+  require('./acolony/player-spaces');
+
 // ============================================================
 // RÔLES
 // ============================================================
@@ -56,6 +66,9 @@ const ATS_ROLE_ID =
 const ETS2_ROLE_ID =
   '1546760060879765544';
 
+const ACOLONY_ROLE_ID =
+  '1548387660517609572';
+
 // ============================================================
 // CATÉGORIES PRINCIPALES
 // ============================================================
@@ -71,6 +84,9 @@ const ATS_MAIN_CATEGORY_ID =
 
 const ETS2_MAIN_CATEGORY_ID =
   '1546774027144532068';
+
+const ACOLONY_MAIN_CATEGORY_ID =
+  '1548387571388653619';
 
 // ============================================================
 // CONFIGURATION JEUX
@@ -211,11 +227,31 @@ const SPACE_LAYOUTS = {
             ETS2_MAIN_CATEGORY_ID
         );
       }
+  },
+
+  acolony: {
+    key:
+      'acolony',
+
+    name:
+      'AColony',
+
+    emoji:
+      '🏭',
+
+    mainCategoryId:
+      ACOLONY_MAIN_CATEGORY_ID,
+
+    matches:
+      category =>
+        category.name.startsWith(
+          '🏭 AColony — '
+        )
   }
 };
 
 // ============================================================
-// FILE D'ATTENTE
+// FILES D'ATTENTE
 // ============================================================
 
 const memberQueues =
@@ -493,52 +529,74 @@ async function reorderAllPlayerSpaces(
   await queueLayoutTask(
     async () => {
       console.log('');
+
       console.log(
         `🗂️ Rangement des Player Spaces sur ${guild.name}...`
       );
 
-      // IMPORTANT :
-      // On fait les blocs du bas vers le haut.
-      //
-      // Comme déplacer une catégorie peut modifier
-      // les positions des autres catégories,
-      // cet ordre limite les déplacements parasites.
+      /*
+       * IMPORTANT :
+       *
+       * On récupère la position réelle de chaque
+       * catégorie principale Discord.
+       *
+       * Ensuite on range du BAS vers le HAUT.
+       *
+       * Ça permet d'ajouter de nouveaux jeux
+       * comme AColony sans devoir modifier
+       * manuellement l'ordre ici.
+       */
 
-      await reorderGameSpaces(
-        guild,
-        'ets2'
-      );
+      const layouts =
+        Object.values(
+          SPACE_LAYOUTS
+        )
+          .map(
+            layout => {
+              const mainCategory =
+                guild.channels.cache.get(
+                  layout.mainCategoryId
+                );
 
-      await sleep(
-        500
-      );
+              return {
+                layout,
+                position:
+                  mainCategory?.position ??
+                  -1
+              };
+            }
+          )
+          .filter(
+            item =>
+              item.position >= 0
+          )
+          .sort(
+            (
+              a,
+              b
+            ) =>
+              b.position -
+              a.position
+          );
 
-      await reorderGameSpaces(
-        guild,
-        'ats'
-      );
+      for (
+        const item
+        of layouts
+      ) {
+        await reorderGameSpaces(
+          guild,
+          item.layout.key
+        );
 
-      await sleep(
-        500
-      );
-
-      await reorderGameSpaces(
-        guild,
-        'gta'
-      );
-
-      await sleep(
-        500
-      );
-
-      await reorderGameSpaces(
-        guild,
-        'ark'
-      );
+        await sleep(
+          500
+        );
+      }
 
       console.log(
         '✅ Rangement général des Player Spaces terminé.'
       );
+
       console.log('');
     }
   );
@@ -594,7 +652,7 @@ async function syncMember(
   }
 
   // ==========================================================
-  // GTA
+  // GTA V
   // ==========================================================
 
   if (
@@ -637,6 +695,21 @@ async function syncMember(
     await createAtsEtsPlayerSpace(
       member,
       ETS2_GAME
+    );
+  }
+
+  // ==========================================================
+  // ACOLONY
+  // ==========================================================
+
+  if (
+    hasRole(
+      member,
+      ACOLONY_ROLE_ID
+    )
+  ) {
+    await createAColonyPlayerSpace(
+      member
     );
   }
 }
@@ -687,6 +760,7 @@ async function syncGuild(
   guild
 ) {
   console.log('');
+
   console.log(
     '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
   );
@@ -730,6 +804,9 @@ async function syncGuild(
   let ets2Count =
     0;
 
+  let acolonyCount =
+    0;
+
   for (
     const member
     of realMembers
@@ -770,6 +847,15 @@ async function syncGuild(
     ) {
       ets2Count++;
     }
+
+    if (
+      hasRole(
+        member,
+        ACOLONY_ROLE_ID
+      )
+    ) {
+      acolonyCount++;
+    }
   }
 
   console.log(
@@ -788,11 +874,16 @@ async function syncGuild(
     `🇪🇺 ETS2 : ${ets2Count} joueur(s)`
   );
 
+  console.log(
+    `🏭 AColony : ${acolonyCount} joueur(s)`
+  );
+
   // ==========================================================
   // ARK
   // ==========================================================
 
   console.log('');
+
   console.log(
     '🦖 Synchronisation ARK...'
   );
@@ -815,6 +906,7 @@ async function syncGuild(
       await createArkPlayerSpace(
         member
       );
+
     } catch (error) {
       console.error(
         `❌ ARK : ${member.user.tag} :`,
@@ -832,10 +924,11 @@ async function syncGuild(
   );
 
   // ==========================================================
-  // GTA
+  // GTA V
   // ==========================================================
 
   console.log('');
+
   console.log(
     '🚘 Synchronisation GTA V...'
   );
@@ -857,6 +950,7 @@ async function syncGuild(
       await createGtaPlayerSpace(
         member
       );
+
     } catch (error) {
       console.error(
         `❌ GTA V : ${member.user.tag} :`,
@@ -878,6 +972,7 @@ async function syncGuild(
   // ==========================================================
 
   console.log('');
+
   console.log(
     '🇺🇸 Synchronisation ATS...'
   );
@@ -900,6 +995,7 @@ async function syncGuild(
         member,
         ATS_GAME
       );
+
     } catch (error) {
       console.error(
         `❌ ATS : ${member.user.tag} :`,
@@ -921,6 +1017,7 @@ async function syncGuild(
   // ==========================================================
 
   console.log('');
+
   console.log(
     '🇪🇺 Synchronisation ETS2...'
   );
@@ -943,6 +1040,7 @@ async function syncGuild(
         member,
         ETS2_GAME
       );
+
     } catch (error) {
       console.error(
         `❌ ETS2 : ${member.user.tag} :`,
@@ -953,6 +1051,50 @@ async function syncGuild(
 
   console.log(
     '✅ Synchronisation ETS2 terminée.'
+  );
+
+  await sleep(
+    750
+  );
+
+  // ==========================================================
+  // ACOLONY
+  // ==========================================================
+
+  console.log('');
+
+  console.log(
+    '🏭 Synchronisation AColony...'
+  );
+
+  for (
+    const member
+    of realMembers
+  ) {
+    if (
+      !hasRole(
+        member,
+        ACOLONY_ROLE_ID
+      )
+    ) {
+      continue;
+    }
+
+    try {
+      await createAColonyPlayerSpace(
+        member
+      );
+
+    } catch (error) {
+      console.error(
+        `❌ AColony : ${member.user.tag} :`,
+        error
+      );
+    }
+  }
+
+  console.log(
+    '✅ Synchronisation AColony terminée.'
   );
 
   // ==========================================================
@@ -1016,6 +1158,7 @@ async function handleRoleChange(
   await queueMemberTask(
     newMember.id,
     async () => {
+
       // ======================================================
       // ARK
       // ======================================================
@@ -1081,7 +1224,7 @@ async function handleRoleChange(
       }
 
       // ======================================================
-      // GTA
+      // GTA V
       // ======================================================
 
       const oldGta =
@@ -1263,6 +1406,70 @@ async function handleRoleChange(
           'ets2'
         );
       }
+
+      // ======================================================
+      // ACOLONY
+      // ======================================================
+
+      const oldAColony =
+        hasRole(
+          oldMember,
+          ACOLONY_ROLE_ID
+        );
+
+      const newAColony =
+        hasRole(
+          newMember,
+          ACOLONY_ROLE_ID
+        );
+
+      // Rôle ajouté
+
+      if (
+        !oldAColony &&
+        newAColony
+      ) {
+        console.log(
+          `🏭 Rôle AColony attribué à ${newMember.user.tag}`
+        );
+
+        await createAColonyPlayerSpace(
+          newMember
+        );
+
+        await sleep(
+          500
+        );
+
+        await reorderOneGame(
+          newMember.guild,
+          'acolony'
+        );
+      }
+
+      // Rôle retiré
+
+      if (
+        oldAColony &&
+        !newAColony
+      ) {
+        console.log(
+          `🏭 Rôle AColony retiré à ${newMember.user.tag}`
+        );
+
+        await deleteAColonyPlayerSpace(
+          newMember
+        );
+
+        await sleep(
+          500
+        );
+
+        await reorderOneGame(
+          newMember.guild,
+          'acolony'
+        );
+      }
     }
   );
 }
@@ -1311,12 +1518,17 @@ function startPlayerSpaces(
     '🎮 Player Spaces général : module chargé'
   );
 
+  // ==========================================================
+  // RÔLES
+  // ==========================================================
+
   if (
     !ARK_ROLE_ID
   ) {
     console.warn(
       '⚠️ ARK_ROLE_ID manquant : espaces ARK désactivés.'
     );
+
   } else {
     console.log(
       `🦖 ARK → ${ARK_ROLE_ID}`
@@ -1334,6 +1546,14 @@ function startPlayerSpaces(
   console.log(
     `🇪🇺 ETS2 → ${ETS2_ROLE_ID}`
   );
+
+  console.log(
+    `🏭 AColony → ${ACOLONY_ROLE_ID}`
+  );
+
+  // ==========================================================
+  // CATÉGORIES PRINCIPALES
+  // ==========================================================
 
   console.log(
     '🗂️ Catégories principales :'
@@ -1355,6 +1575,10 @@ function startPlayerSpaces(
     `🇪🇺 ETS2 → ${ETS2_MAIN_CATEGORY_ID}`
   );
 
+  console.log(
+    `🏭 AColony → ${ACOLONY_MAIN_CATEGORY_ID}`
+  );
+
   // ==========================================================
   // CHANGEMENT DE RÔLE
   // ==========================================================
@@ -1370,6 +1594,7 @@ function startPlayerSpaces(
           oldMember,
           newMember
         );
+
       } catch (error) {
         console.error(
           '❌ Player Spaces : erreur changement de rôle :',
@@ -1390,6 +1615,7 @@ function startPlayerSpaces(
         await handleMemberAdd(
           member
         );
+
       } catch (error) {
         console.error(
           '❌ Player Spaces : erreur arrivée membre :',
@@ -1409,6 +1635,7 @@ function startPlayerSpaces(
         await syncAllGuilds(
           client
         );
+
       } catch (error) {
         console.error(
           '❌ Player Spaces : synchronisation initiale impossible :',
@@ -1432,11 +1659,17 @@ module.exports = {
   reorderAllPlayerSpaces,
   reorderGameSpaces,
 
+  // ARK
+
   createArkPlayerSpace,
   deleteArkPlayerSpace,
 
+  // GTA V
+
   createGtaPlayerSpace,
   deleteGtaPlayerSpace,
+
+  // ATS
 
   createAtsPlayerSpace:
     member =>
@@ -1452,6 +1685,8 @@ module.exports = {
         ATS_GAME
       ),
 
+  // ETS2
+
   createEts2PlayerSpace:
     member =>
       createAtsEtsPlayerSpace(
@@ -1464,5 +1699,10 @@ module.exports = {
       deleteAtsEtsPlayerSpace(
         member,
         ETS2_GAME
-      )
+      ),
+
+  // ACOLONY
+
+  createAColonyPlayerSpace,
+  deleteAColonyPlayerSpace
 };
