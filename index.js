@@ -8,7 +8,9 @@ const {
 const startArkUpdates =
   require('./modules/ark/ark-updates');
 
-const startArkBridge =
+const {
+  startArkBridge
+} =
   require('./modules/ark/ark-bridge');
 
 const startGtaUpdates =
@@ -48,6 +50,11 @@ const {
   startPlayerSpaces
 } =
   require('./modules/player-spaces');
+
+const {
+  startBridgeServer
+} =
+  require('./modules/shared/bridge-server');
 
 // ============================================================
 // CLIENT DISCORD
@@ -146,8 +153,20 @@ client.once(
     startPlayerSpaces(
       readyClient
     );
+
+    // ========================================================
+    // SERVEUR HTTP PUBLIC UNIQUE
+    // ========================================================
+
+    startBridgeServer(
+      readyClient
+    );
   }
 );
+
+// ============================================================
+// ERREURS DISCORD
+// ============================================================
 
 client.on(
   'error',
@@ -158,6 +177,10 @@ client.on(
     );
   }
 );
+
+// ============================================================
+// ERREURS NODE
+// ============================================================
 
 process.on(
   'unhandledRejection',
@@ -179,13 +202,25 @@ process.on(
   }
 );
 
-if (!process.env.DISCORD_TOKEN) {
+// ============================================================
+// TOKEN
+// ============================================================
+
+if (
+  !process.env.DISCORD_TOKEN
+) {
   console.error(
     '❌ Variable DISCORD_TOKEN manquante.'
   );
 
-  process.exit(1);
+  process.exit(
+    1
+  );
 }
+
+// ============================================================
+// CONNEXION
+// ============================================================
 
 client.login(
   process.env.DISCORD_TOKEN
