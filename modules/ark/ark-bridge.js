@@ -16,7 +16,7 @@ const PORT =
   Number(
     process.env.PORT
   ) ||
-  3000;
+  25070;
 
 const ARK_BRIDGE_SECRET =
   process.env.ARK_BRIDGE_SECRET;
