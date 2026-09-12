@@ -1,4 +1,3 @@
-const http = require('http');
 const { URL } = require('url');
 
 const {
@@ -23,17 +22,9 @@ const {
 const GTA_ROLE_ID =
   '1546760047105806366';
 
-const PORT =
-  Number(
-    process.env.GTA_BRIDGE_PORT
-  ) ||
-  25071;
-
-const HOST = '0.0.0.0';
 const MAX_BODY_SIZE = 1024 * 1024;
 
 let gtaClient = null;
-let server = null;
 
 const CHANNELS = {
   character:
@@ -1098,9 +1089,7 @@ async function handleRequest(
           service:
             'Naru GTA Bridge',
           status:
-            'online',
-          port:
-            PORT
+            'online'
         }
       );
       return;
@@ -1164,7 +1153,7 @@ async function handleRequest(
 }
 
 // ============================================================
-// START / STOP
+// START / ROUTEUR PARTAGÉ
 // ============================================================
 
 function startGtaBridge(
@@ -1180,99 +1169,33 @@ function startGtaBridge(
     };
   }
 
-  if (server) {
-    console.log(
-      '⚠️ GTA Bridge déjà démarré.'
-    );
-    return server;
-  }
-
-  server =
-    http.createServer(
-      (request, response) => {
-        handleRequest(
-          request,
-          response
-        ).catch(
-          error => {
-            console.error(
-              '❌ Erreur requête GTA Bridge :',
-              error
-            );
-
-            if (!response.headersSent) {
-              sendJson(
-                response,
-                500,
-                {
-                  ok: false,
-                  error:
-                    'Erreur interne GTA Bridge'
-                }
-              );
-            }
-          }
-        );
-      }
-    );
-
-  server.on(
-    'error',
-    error => {
-      console.error(
-        '❌ GTA Bridge HTTP :',
-        error
-      );
-    }
+  console.log(
+    '🚘 GTA Bridge : module chargé'
   );
-
-  server.listen(
-    PORT,
-    HOST,
-    () => {
-      console.log(
-        '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
-      );
-      console.log(
-        '🚘 NARU GTA V BRIDGE'
-      );
-      console.log(
-        `✅ Serveur GTA actif sur le port ${PORT}`
-      );
-      console.log(
-        `🌐 http://${HOST}:${PORT}/gta/health`
-      );
-      console.log(
-        '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
-      );
-    }
-  );
-
-  client.gtaBridge.server =
-    server;
-
-  return server;
 }
 
-function stopGtaBridge() {
-  if (!server) {
-    return;
+async function handleGtaBridgeRequest(
+  request,
+  response
+) {
+  if (
+    !request.url ||
+    !request.url.startsWith('/gta/')
+  ) {
+    return false;
   }
 
-  server.close(
-    () => {
-      console.log(
-        '🛑 Naru GTA Bridge arrêté.'
-      );
-    }
+  await handleRequest(
+    request,
+    response
   );
 
-  server = null;
+  return true;
 }
 
 module.exports = {
   startGtaBridge,
-  stopGtaBridge,
+  handleGtaBridgeRequest,
   handleRequest,
   handleTelemetry
 };
