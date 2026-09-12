@@ -25,6 +25,11 @@ const {
   require('./modules/gta/gta-link');
 
 const {
+  startGtaBridge
+} =
+  require('./modules/gta/gta-bridge');
+
+const {
   startAtsEtsUpdates
 } =
   require('./modules/ATS-ETS/ats-ets-updates');
@@ -79,14 +84,9 @@ client.once(
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
     );
 
-    // ========================================================
-    // ACTIVITÉ BOT
-    // ========================================================
-
     readyClient.user.setActivity({
       name:
         'Naru Gaming Command',
-
       type:
         ActivityType.Watching
     });
@@ -119,6 +119,10 @@ client.once(
       readyClient
     );
 
+    startGtaBridge(
+      readyClient
+    );
+
     // ========================================================
     // ATS / ETS2
     // ========================================================
@@ -145,10 +149,6 @@ client.once(
   }
 );
 
-// ============================================================
-// ERREURS DISCORD
-// ============================================================
-
 client.on(
   'error',
   error => {
@@ -158,10 +158,6 @@ client.on(
     );
   }
 );
-
-// ============================================================
-// ERREURS NODE
-// ============================================================
 
 process.on(
   'unhandledRejection',
@@ -183,25 +179,13 @@ process.on(
   }
 );
 
-// ============================================================
-// TOKEN
-// ============================================================
-
-if (
-  !process.env.DISCORD_TOKEN
-) {
+if (!process.env.DISCORD_TOKEN) {
   console.error(
     '❌ Variable DISCORD_TOKEN manquante.'
   );
 
-  process.exit(
-    1
-  );
+  process.exit(1);
 }
-
-// ============================================================
-// CONNEXION
-// ============================================================
 
 client.login(
   process.env.DISCORD_TOKEN
