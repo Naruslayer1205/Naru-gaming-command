@@ -7,17 +7,10 @@ const fs = require('fs');
 const path = require('path');
 const { URL } = require('url');
 
-const {
-  findPlayerCategory
-} = require('./player-spaces');
-
-const {
-  processGtaChallengeTelemetry
-} = require('./gta-challenges');
-
-// ─────────────────────────────────────
-// CONFIGURATION
-// ─────────────────────────────────────
+// ============================================================
+// NARU GAMING COMMAND
+// GTA V — LINK SYSTEM
+// ============================================================
 
 const GTA_ROLE_ID =
   '1546760047105806366';
@@ -37,65 +30,26 @@ const DATA_FILE =
     'gta-links.json'
   );
 
-// ─────────────────────────────────────
-// DEMANDES TEMPORAIRES
-// ─────────────────────────────────────
-
 const pendingLinks =
   new Map();
 
-let gtaClient =
-  null;
-
-const CHANNELS = {
-  character:
-    '👤・personnage',
-
-  position:
-    '📍・position',
-
-  vehicle:
-    '🚗・vehicule',
-
-  statistics:
-    '📊・statistiques',
-
-  journal:
-    '📜・journal',
-
-  commands:
-    '⚙️・commandes'
-};
-
-// ─────────────────────────────────────
-// FICHIER DE DONNÉES
-// ─────────────────────────────────────
+// ============================================================
+// DATA
+// ============================================================
 
 function ensureDataFile() {
-  if (
-    !fs.existsSync(
-      DATA_FOLDER
-    )
-  ) {
+  if (!fs.existsSync(DATA_FOLDER)) {
     fs.mkdirSync(
       DATA_FOLDER,
-      {
-        recursive: true
-      }
+      { recursive: true }
     );
   }
 
-  if (
-    !fs.existsSync(
-      DATA_FILE
-    )
-  ) {
+  if (!fs.existsSync(DATA_FILE)) {
     fs.writeFileSync(
       DATA_FILE,
       JSON.stringify(
-        {
-          users: {}
-        },
+        { users: {} },
         null,
         2
       ),
@@ -120,9 +74,7 @@ function loadData() {
       error
     );
 
-    return {
-      users: {}
-    };
+    return { users: {} };
   }
 }
 
@@ -140,9 +92,9 @@ function saveData(data) {
   );
 }
 
-// ─────────────────────────────────────
-// OUTILS
-// ─────────────────────────────────────
+// ============================================================
+// SECURITY / CODES
+// ============================================================
 
 function generateCode() {
   return (
@@ -173,21 +125,15 @@ function hashToken(token) {
 
 function findRequestByCode(code) {
   const normalizedCode =
-    String(code)
+    String(code || '')
       .trim()
       .toUpperCase();
 
   for (
-    const [
-      requestId,
-      request
-    ]
+    const [requestId, request]
     of pendingLinks.entries()
   ) {
-    if (
-      request.code ===
-      normalizedCode
-    ) {
+    if (request.code === normalizedCode) {
       return {
         requestId,
         request
@@ -199,23 +145,14 @@ function findRequestByCode(code) {
 }
 
 function cleanExpiredRequests() {
-  const now =
-    Date.now();
+  const now = Date.now();
 
   for (
-    const [
-      requestId,
-      request
-    ]
+    const [requestId, request]
     of pendingLinks.entries()
   ) {
-    if (
-      now >
-      request.expiresAt
-    ) {
-      pendingLinks.delete(
-        requestId
-      );
+    if (now > request.expiresAt) {
+      pendingLinks.delete(requestId);
     }
   }
 }
@@ -224,38 +161,34 @@ function createUniqueCode() {
   let code;
 
   do {
-    code =
-      generateCode();
-  } while (
-    findRequestByCode(
-      code
-    )
-  );
+    code = generateCode();
+  } while (findRequestByCode(code));
 
   return code;
 }
 
-// ─────────────────────────────────────
-// TOKEN PERMANENT
-// ─────────────────────────────────────
+// ============================================================
+// INSTALLATIONS
+// ============================================================
 
 function registerToken(
   discordId,
   token
 ) {
-  const data =
-    loadData();
+  const data = loadData();
 
-  if (
-    !data.users[
-      discordId
-    ]
-  ) {
-    data.users[
-      discordId
-    ] = {
+  if (!data.users[discordId]) {
+    data.users[discordId] = {
       installations: []
     };
+  }
+
+  if (
+    !Array.isArray(
+      data.users[discordId].installations
+    )
+  ) {
+    data.users[discordId].installations = [];
   }
 
   const installationId =
@@ -264,92 +197,33 @@ function registerToken(
       .toString('hex')
       .toUpperCase()}`;
 
-  data.users[
-    discordId
-  ].installations.push({
-    installationId,
+  data.users[discordId]
+    .installations
+    .push({
+      installationId,
 
-    tokenHash:
-      hashToken(
-        token
-      ),
+      tokenHash:
+        hashToken(token),
 
-    createdAt:
-      new Date()
-        .toISOString(),
+      createdAt:
+        new Date().toISOString(),
 
-    lastSeen:
-      null
-  });
+      lastSeen:
+        null,
 
-  saveData(
-    data
-  );
+      lastTelemetryAt:
+        null,
+
+      edition:
+        null,
+
+      bridgeVersion:
+        null
+    });
+
+  saveData(data);
 
   return installationId;
-}
-
-
-// ─────────────────────────────────────
-// TÉLÉMÉTRIE — OUTILS
-// ─────────────────────────────────────
-
-function readJsonBody(
-  request
-) {
-  return new Promise(
-    (
-      resolve,
-      reject
-    ) => {
-      let data = '';
-
-      request.on(
-        'data',
-        chunk => {
-          data += chunk;
-
-          if (
-            data.length >
-            1024 * 1024
-          ) {
-            reject(
-              new Error(
-                'Payload GTA trop volumineux'
-              )
-            );
-
-            request.destroy();
-          }
-        }
-      );
-
-      request.on(
-        'end',
-        () => {
-          if (!data) {
-            resolve({});
-            return;
-          }
-
-          try {
-            resolve(
-              JSON.parse(
-                data
-              )
-            );
-          } catch {
-            resolve(null);
-          }
-        }
-      );
-
-      request.on(
-        'error',
-        reject
-      );
-    }
-  );
 }
 
 function findInstallation(
@@ -359,14 +233,10 @@ function findInstallation(
     return null;
   }
 
-  const data =
-    loadData();
+  const data = loadData();
 
   for (
-    const [
-      discordId,
-      userData
-    ]
+    const [discordId, userData]
     of Object.entries(
       data.users || {}
     )
@@ -398,43 +268,36 @@ function findInstallation(
   return null;
 }
 
-function authenticateTelemetry(
+function authenticateGta(
   request,
-  body
+  body = {}
 ) {
   const installationId =
     request.headers[
       'x-naru-installation-id'
     ] ||
-    body?.installationId;
+    body.installationId;
 
   let token =
     request.headers[
       'x-naru-gta-token'
     ] ||
-    body?.token;
+    body.token;
 
   const authorization =
     request.headers.authorization;
 
   if (
     !token &&
-    typeof authorization ===
-      'string' &&
+    typeof authorization === 'string' &&
     authorization
       .toLowerCase()
-      .startsWith(
-        'bearer '
-      )
+      .startsWith('bearer ')
   ) {
-    token =
-      authorization.slice(7);
+    token = authorization.slice(7);
   }
 
-  if (
-    !installationId ||
-    !token
-  ) {
+  if (!installationId || !token) {
     return {
       ok: false,
       status: 401,
@@ -445,9 +308,7 @@ function authenticateTelemetry(
 
   const result =
     findInstallation(
-      String(
-        installationId
-      )
+      String(installationId)
     );
 
   if (!result) {
@@ -460,17 +321,13 @@ function authenticateTelemetry(
   }
 
   const receivedHash =
-    hashToken(
-      String(token)
-    );
+    hashToken(String(token));
 
   const expectedHash =
-    result.installation
-      .tokenHash;
+    result.installation.tokenHash;
 
   const valid =
-    typeof expectedHash ===
-      'string' &&
+    typeof expectedHash === 'string' &&
     expectedHash.length ===
       receivedHash.length &&
     crypto.timingSafeEqual(
@@ -497,936 +354,14 @@ function authenticateTelemetry(
     ok: true,
     ...result,
     installationId:
-      String(
-        installationId
-      )
+      String(installationId)
   };
 }
 
-async function findGtaMember(
-  client,
-  discordId
-) {
-  if (!client) {
-    return null;
-  }
-
-  for (
-    const guild
-    of client.guilds.cache.values()
-  ) {
-    let member =
-      guild.members.cache.get(
-        discordId
-      );
-
-    if (!member) {
-      try {
-        member =
-          await guild.members.fetch(
-            discordId
-          );
-      } catch {
-        member = null;
-      }
-    }
-
-    if (member) {
-      return {
-        guild,
-        member
-      };
-    }
-  }
-
-  return null;
-}
-
-function getChannel(
-  guild,
-  category,
-  name
-) {
-  return guild.channels.cache.find(
-    channel =>
-      channel.parentId ===
-        category.id &&
-      channel.name ===
-        name
-  );
-}
-
-function value(
-  input,
-  fallback = 'Non disponible'
-) {
-  if (
-    input === null ||
-    input === undefined ||
-    input === ''
-  ) {
-    return fallback;
-  }
-
-  return String(input);
-}
-
-function number(
-  input,
-  digits = 1
-) {
-  if (
-    input === null ||
-    input === undefined ||
-    input === ''
-  ) {
-    return 'Non disponible';
-  }
-
-  const parsed =
-    Number(input);
-
-  if (
-    Number.isNaN(
-      parsed
-    )
-  ) {
-    return String(input);
-  }
-
-  return parsed.toLocaleString(
-    'fr-FR',
-    {
-      maximumFractionDigits:
-        digits
-    }
-  );
-}
-
-function yesNo(
-  input
-) {
-  if (
-    input === null ||
-    input === undefined
-  ) {
-    return 'Non disponible';
-  }
-
-  return input
-    ? 'Oui'
-    : 'Non';
-}
-
-function formatDuration(
-  seconds
-) {
-  const total =
-    Math.max(
-      0,
-      Math.floor(
-        Number(seconds) || 0
-      )
-    );
-
-  const hours =
-    Math.floor(
-      total / 3600
-    );
-
-  const minutes =
-    Math.floor(
-      (total % 3600) / 60
-    );
-
-  const remainingSeconds =
-    total % 60;
-
-  if (hours > 0) {
-    return `${hours} h ${minutes} min`;
-  }
-
-  if (minutes > 0) {
-    return `${minutes} min ${remainingSeconds} s`;
-  }
-
-  return `${remainingSeconds} s`;
-}
-
-function unix(
-  date
-) {
-  const timestamp =
-    new Date(
-      date || Date.now()
-    ).getTime();
-
-  if (
-    Number.isNaN(
-      timestamp
-    )
-  ) {
-    return Math.floor(
-      Date.now() / 1000
-    );
-  }
-
-  return Math.floor(
-    timestamp / 1000
-  );
-}
-
-function limitDiscord(
-  content
-) {
-  if (
-    content.length <= 1950
-  ) {
-    return content;
-  }
-
-  return (
-    content.slice(
-      0,
-      1850
-    ) +
-    '\n\n*Affichage réduit automatiquement.*'
-  );
-}
-
-async function upsertGtaMessage(
-  client,
-  userId,
-  channel,
-  type,
-  content
-) {
-  if (!client.gtaBridge) {
-    client.gtaBridge = {
-      players: new Map(),
-      previousStates:
-        new Map(),
-      messages: new Map()
-    };
-  }
-
-  const key =
-    `${userId}:${type}`;
-
-  let messageId =
-    client.gtaBridge
-      .messages
-      .get(key);
-
-  let message = null;
-
-  if (messageId) {
-    try {
-      message =
-        await channel.messages.fetch(
-          messageId
-        );
-    } catch {
-      message = null;
-    }
-  }
-
-  if (!message) {
-    try {
-      const messages =
-        await channel.messages.fetch({
-          limit: 20
-        });
-
-      message =
-        messages.find(
-          msg =>
-            msg.author.id ===
-              channel.client.user.id
-        );
-    } catch {
-      message = null;
-    }
-  }
-
-  if (message) {
-    await message.edit(
-      content
-    );
-
-    client.gtaBridge
-      .messages
-      .set(
-        key,
-        message.id
-      );
-
-    return;
-  }
-
-  const newMessage =
-    await channel.send(
-      content
-    );
-
-  client.gtaBridge
-    .messages
-    .set(
-      key,
-      newMessage.id
-    );
-}
-
-function buildCharacterMessage(
-  member,
-  state
-) {
-  const player =
-    state.player || {};
-
-  const weapon =
-    state.weapon || {};
-
-  return [
-    '# 👤 Personnage GTA V',
-    '',
-    `**Joueur Discord :** ${member}`,
-    `**Personnage / modèle :** ${value(player.name || player.model)}`,
-    `❤️ **Santé :** ${number(player.health, 0)} / ${number(player.maxHealth, 0)}`,
-    `🛡️ **Armure :** ${number(player.armor, 0)}`,
-    `💀 **Mort :** ${yesNo(player.isDead)}`,
-    `💵 **Argent :** ${number(player.money, 0)}`,
-    '',
-    '## 🔫 Arme actuelle',
-    '',
-    `**Nom :** ${value(weapon.name || weapon.label)}`,
-    `**Hash :** ${value(weapon.hash)}`,
-    `**Munitions :** ${number(weapon.ammo, 0)}`,
-    '',
-    `🔄 Dernière synchronisation : <t:${unix(state.receivedAt)}:R>`
-  ].join('\n');
-}
-
-function buildPositionMessage(
-  state
-) {
-  const position =
-    state.position || {};
-
-  return [
-    '# 📍 Position GTA V',
-    '',
-    `🛣️ **Rue :** ${value(position.street)}`,
-    `🏙️ **Zone :** ${value(position.zone || position.area)}`,
-    `📌 **X :** ${number(position.x, 2)}`,
-    `📌 **Y :** ${number(position.y, 2)}`,
-    `📌 **Z :** ${number(position.z, 2)}`,
-    `🧭 **Cap :** ${number(position.heading, 1)}°`,
-    '',
-    `🔄 Dernière synchronisation : <t:${unix(state.receivedAt)}:R>`
-  ].join('\n');
-}
-
-function buildVehicleMessage(
-  state
-) {
-  const vehicle =
-    state.vehicle || {};
-
-  if (
-    vehicle.inVehicle ===
-      false ||
-    !vehicle.inVehicle
-  ) {
-    return [
-      '# 🚗 Véhicule GTA V',
-      '',
-      'Le joueur est actuellement **à pied**.',
-      '',
-      `🔄 Dernière synchronisation : <t:${unix(state.receivedAt)}:R>`
-    ].join('\n');
-  }
-
-  return [
-    '# 🚗 Véhicule GTA V',
-    '',
-    `**Modèle :** ${value(vehicle.displayName || vehicle.model)}`,
-    `**Classe :** ${value(vehicle.className || vehicle.class)}`,
-    `🔢 **Plaque :** ${value(vehicle.plate)}`,
-    `💨 **Vitesse :** ${number(vehicle.speedKmh, 1)} km/h`,
-    `🔧 **Moteur :** ${number(vehicle.engineHealth, 0)}`,
-    `🚘 **Carrosserie :** ${number(vehicle.bodyHealth, 0)}`,
-    `⛽ **Carburant :** ${number(vehicle.fuelLevel, 1)}`,
-    `🪑 **Position :** ${value(vehicle.seat)}`,
-    `👑 **Conducteur :** ${yesNo(vehicle.isDriver)}`,
-    '',
-    `🔄 Dernière synchronisation : <t:${unix(state.receivedAt)}:R>`
-  ].join('\n');
-}
-
-function buildStatisticsMessage(
-  state
-) {
-  const session =
-    state.session || {};
-
-  return [
-    '# 📊 Statistiques GTA V',
-    '',
-    `🎮 **Édition :** ${value(state.edition)}`,
-    `🧩 **Version GTA :** ${value(state.gameVersion)}`,
-    `🔌 **Version Naru Bridge :** ${value(state.bridgeVersion)}`,
-    '',
-    `⏱️ **Durée de session :** ${formatDuration(session.durationSeconds)}`,
-    `🛣️ **Distance parcourue :** ${number((Number(session.distanceMeters) || 0) / 1000, 2)} km`,
-    `💀 **Morts :** ${number(session.deaths, 0)}`,
-    `🚗 **Véhicules utilisés :** ${number(session.vehiclesUsed, 0)}`,
-    '',
-    `🔄 Dernière synchronisation : <t:${unix(state.receivedAt)}:R>`
-  ].join('\n');
-}
-
-function buildCommandsMessage(
-  state,
-  installationId
-) {
-  return [
-    '# ⚙️ Naru GTA Bridge',
-    '',
-    '🟢 **Statut : CONNECTÉ**',
-    '',
-    `💻 **Installation :** \`${installationId}\``,
-    `🎮 **Édition détectée :** ${value(state.edition)}`,
-    `🔌 **Bridge :** ${value(state.bridgeVersion)}`,
-    '',
-    `📡 **Dernières données reçues :** <t:${unix(state.receivedAt)}:R>`,
-    `💻 **Dernier envoi du client :** <t:${unix(state.sentAt || state.receivedAt)}:R>`,
-    '',
-    'Le **Naru GTA Bridge** lit les informations du mode Histoire de GTA V et les transmet automatiquement à Naru Gaming Command.'
-  ].join('\n');
-}
-
-async function updateGtaJournal(
-  channel,
-  state,
-  previous
-) {
-  if (!previous) {
-    await channel.send(
-      [
-        '## 📜 Journal GTA initialisé',
-        '',
-        `🎮 Édition : **${value(state.edition)}**`,
-        '',
-        `🕒 <t:${unix(state.receivedAt)}:F>`
-      ].join('\n')
-    );
-
-    return;
-  }
-
-  const events = [];
-
-  const oldDead =
-    previous.player
-      ?.isDead;
-
-  const newDead =
-    state.player
-      ?.isDead;
-
-  if (
-    oldDead === false &&
-    newDead === true
-  ) {
-    events.push(
-      '💀 Le personnage est mort.'
-    );
-  }
-
-  if (
-    oldDead === true &&
-    newDead === false
-  ) {
-    events.push(
-      '❤️ Le personnage est réapparu.'
-    );
-  }
-
-  const oldVehicle =
-    previous.vehicle || {};
-
-  const newVehicle =
-    state.vehicle || {};
-
-  if (
-    !oldVehicle.inVehicle &&
-    newVehicle.inVehicle
-  ) {
-    events.push(
-      `🚗 Entrée dans **${value(newVehicle.displayName || newVehicle.model, 'un véhicule')}**.`
-    );
-  } else if (
-    oldVehicle.inVehicle &&
-    !newVehicle.inVehicle
-  ) {
-    events.push(
-      '🚶 Sortie du véhicule.'
-    );
-  } else if (
-    oldVehicle.inVehicle &&
-    newVehicle.inVehicle &&
-    value(
-      oldVehicle.plate,
-      ''
-    ) !==
-    value(
-      newVehicle.plate,
-      ''
-    )
-  ) {
-    events.push(
-      `🚘 Changement de véhicule : **${value(newVehicle.displayName || newVehicle.model)}**.`
-    );
-  }
-
-  const oldWeapon =
-    previous.weapon
-      ?.name;
-
-  const newWeapon =
-    state.weapon
-      ?.name;
-
-  if (
-    oldWeapon &&
-    newWeapon &&
-    oldWeapon !==
-      newWeapon
-  ) {
-    events.push(
-      `🔫 Arme équipée : **${newWeapon}**.`
-    );
-  }
-
-  const oldZone =
-    previous.position
-      ?.zone;
-
-  const newZone =
-    state.position
-      ?.zone;
-
-  if (
-    oldZone &&
-    newZone &&
-    oldZone !==
-      newZone
-  ) {
-    events.push(
-      `📍 Nouvelle zone : **${newZone}**.`
-    );
-  }
-
-  if (!events.length) {
-    return;
-  }
-
-  await channel.send(
-    limitDiscord(
-      [
-        '## 📜 Événement GTA',
-        '',
-        ...events,
-        '',
-        `🕒 <t:${unix(state.receivedAt)}:F>`
-      ].join('\n')
-    )
-  );
-}
-
-async function updateGtaDiscord(
-  client,
-  member,
-  category,
-  state,
-  previous,
-  installationId
-) {
-  const guild =
-    member.guild;
-
-  const character =
-    getChannel(
-      guild,
-      category,
-      CHANNELS.character
-    );
-
-  const position =
-    getChannel(
-      guild,
-      category,
-      CHANNELS.position
-    );
-
-  const vehicle =
-    getChannel(
-      guild,
-      category,
-      CHANNELS.vehicle
-    );
-
-  const statistics =
-    getChannel(
-      guild,
-      category,
-      CHANNELS.statistics
-    );
-
-  const journal =
-    getChannel(
-      guild,
-      category,
-      CHANNELS.journal
-    );
-
-  const commands =
-    getChannel(
-      guild,
-      category,
-      CHANNELS.commands
-    );
-
-  if (character) {
-    await upsertGtaMessage(
-      client,
-      member.id,
-      character,
-      'character',
-      buildCharacterMessage(
-        member,
-        state
-      )
-    );
-  }
-
-  if (position) {
-    await upsertGtaMessage(
-      client,
-      member.id,
-      position,
-      'position',
-      buildPositionMessage(
-        state
-      )
-    );
-  }
-
-  if (vehicle) {
-    await upsertGtaMessage(
-      client,
-      member.id,
-      vehicle,
-      'vehicle',
-      buildVehicleMessage(
-        state
-      )
-    );
-  }
-
-  if (statistics) {
-    await upsertGtaMessage(
-      client,
-      member.id,
-      statistics,
-      'statistics',
-      buildStatisticsMessage(
-        state
-      )
-    );
-  }
-
-  if (commands) {
-    await upsertGtaMessage(
-      client,
-      member.id,
-      commands,
-      'commands',
-      buildCommandsMessage(
-        state,
-        installationId
-      )
-    );
-  }
-
-  if (journal) {
-    await updateGtaJournal(
-      journal,
-      state,
-      previous
-    );
-  }
-}
-
-async function handleTelemetry(
-  request,
-  response
-) {
-  const body =
-    await readJsonBody(
-      request
-    );
-
-  if (!body) {
-    sendJson(
-      response,
-      400,
-      {
-        ok: false,
-        error:
-          'JSON GTA invalide'
-      }
-    );
-
-    return true;
-  }
-
-  const auth =
-    authenticateTelemetry(
-      request,
-      body
-    );
-
-  if (!auth.ok) {
-    sendJson(
-      response,
-      auth.status,
-      {
-        ok: false,
-        error:
-          auth.error
-      }
-    );
-
-    return true;
-  }
-
-  if (!gtaClient) {
-    sendJson(
-      response,
-      503,
-      {
-        ok: false,
-        error:
-          'Module Discord GTA non prêt'
-      }
-    );
-
-    return true;
-  }
-
-  const telemetry =
-    body.telemetry &&
-    typeof body.telemetry ===
-      'object'
-      ? body.telemetry
-      : body;
-
-  const memberResult =
-    await findGtaMember(
-      gtaClient,
-      auth.discordId
-    );
-
-  if (!memberResult) {
-    sendJson(
-      response,
-      403,
-      {
-        ok: false,
-        error:
-          'Utilisateur Discord introuvable'
-      }
-    );
-
-    return true;
-  }
-
-  const {
-    guild,
-    member
-  } =
-    memberResult;
-
-  if (
-    !member.roles.cache.has(
-      GTA_ROLE_ID
-    )
-  ) {
-    sendJson(
-      response,
-      403,
-      {
-        ok: false,
-        error:
-          'Rôle GTA V requis'
-      }
-    );
-
-    return true;
-  }
-
-  const category =
-    findPlayerCategory(
-      guild,
-      member.id
-    );
-
-  if (!category) {
-    sendJson(
-      response,
-      409,
-      {
-        ok: false,
-        error:
-          'Espace GTA non créé'
-      }
-    );
-
-    return true;
-  }
-
-  if (!gtaClient.gtaBridge) {
-    gtaClient.gtaBridge = {
-      players: new Map(),
-      previousStates:
-        new Map(),
-      messages: new Map()
-    };
-  }
-
-  const receivedAt =
-    new Date()
-      .toISOString();
-
-  const state = {
-    ...telemetry,
-    installationId:
-      auth.installationId,
-    receivedAt
-  };
-
-  const previous =
-    gtaClient.gtaBridge
-      .previousStates
-      .get(
-        auth.discordId
-      );
-
-  gtaClient.gtaBridge
-    .players
-    .set(
-      auth.discordId,
-      state
-    );
-
-  await updateGtaDiscord(
-    gtaClient,
-    member,
-    category,
-    state,
-    previous,
-    auth.installationId
-  );
-
-  try {
-    await processGtaChallengeTelemetry(
-      gtaClient,
-      member,
-      category,
-      state
-    );
-  } catch (error) {
-    console.error(
-      '❌ Erreur traitement défis GTA :',
-      error
-    );
-  }
-
-  gtaClient.gtaBridge
-    .previousStates
-    .set(
-      auth.discordId,
-      state
-    );
-
-  auth.installation.lastSeen =
-    receivedAt;
-
-  auth.installation.lastTelemetryAt =
-    receivedAt;
-
-  auth.installation.edition =
-    state.edition || null;
-
-  auth.installation.bridgeVersion =
-    state.bridgeVersion || null;
-
-  saveData(
-    auth.data
-  );
-
-  console.log('');
-  console.log(
-    '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
-  );
-  console.log(
-    '📡 DONNÉES GTA REÇUES'
-  );
-  console.log(
-    '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
-  );
-  console.log(
-    `👤 Discord : ${member.user.tag}`
-  );
-  console.log(
-    `💻 Installation : ${auth.installationId}`
-  );
-  console.log(
-    `🎮 Édition : ${state.edition || '?'}`
-  );
-  console.log(
-    `❤️ Santé : ${state.player?.health ?? '?'}`
-  );
-  console.log(
-    `🚗 Véhicule : ${state.vehicle?.displayName || state.vehicle?.model || 'À pied'}`
-  );
-  console.log(
-    `🕒 ${receivedAt}`
-  );
-
-  sendJson(
-    response,
-    200,
-    {
-      ok: true,
-      status:
-        'telemetry_received',
-      discordId:
-        auth.discordId,
-      installationId:
-        auth.installationId,
-      receivedAt
-    }
-  );
-
-  return true;
-}
-
-// ─────────────────────────────────────
-// RÉPONSE JSON
-// ─────────────────────────────────────
+// ============================================================
+// HTTP LINK ROUTES
+// Le serveur HTTP est démarré dans gta-bridge.js.
+// ============================================================
 
 function sendJson(
   response,
@@ -1434,9 +369,7 @@ function sendJson(
   data
 ) {
   const payload =
-    JSON.stringify(
-      data
-    );
+    JSON.stringify(data);
 
   response.writeHead(
     status,
@@ -1445,9 +378,7 @@ function sendJson(
         'application/json; charset=utf-8',
 
       'Content-Length':
-        Buffer.byteLength(
-          payload
-        ),
+        Buffer.byteLength(payload),
 
       'Access-Control-Allow-Origin':
         '*',
@@ -1460,317 +391,186 @@ function sendJson(
     }
   );
 
-  response.end(
-    payload
-  );
+  response.end(payload);
 }
 
-// ─────────────────────────────────────
-// ROUTES GTA
-// ─────────────────────────────────────
-
-async function handleGtaRequest(
+async function handleGtaLinkRequest(
   request,
   response
 ) {
-  try {
-    cleanExpiredRequests();
+  cleanExpiredRequests();
 
-    const requestUrl =
-      new URL(
-        request.url,
-        `http://${request.headers.host || 'localhost'}`
-      );
+  const requestUrl =
+    new URL(
+      request.url,
+      `http://${request.headers.host || 'localhost'}`
+    );
 
-    // On ne prend que les routes GTA.
+  if (
+    !requestUrl.pathname.startsWith(
+      '/gta/link/'
+    )
+  ) {
+    return false;
+  }
 
-    if (
-      !requestUrl.pathname.startsWith(
-        '/gta/'
-      )
-    ) {
-      return false;
-    }
+  if (
+    request.method === 'POST' &&
+    requestUrl.pathname ===
+      '/gta/link/start'
+  ) {
+    const requestId =
+      generateRequestId();
 
-    // ─────────────────────────────
-    // OPTIONS
-    // ─────────────────────────────
+    const code =
+      createUniqueCode();
 
-    if (
-      request.method ===
-      'OPTIONS'
-    ) {
-      sendJson(
-        response,
-        200,
-        {
-          ok: true
-        }
-      );
+    const createdAt =
+      Date.now();
 
-      return true;
-    }
+    pendingLinks.set(
+      requestId,
+      {
+        code,
+        createdAt,
 
-    // ─────────────────────────────
-    // HEALTH
-    // ─────────────────────────────
+        expiresAt:
+          createdAt +
+          LINK_CODE_DURATION,
 
-    if (
-      request.method ===
-        'GET' &&
-      requestUrl.pathname ===
-        '/gta/health'
-    ) {
-      sendJson(
-        response,
-        200,
-        {
-          ok: true,
-
-          service:
-            'Naru GTA Bridge',
-
-          status:
-            'online'
-        }
-      );
-
-      return true;
-    }
-
-    // ─────────────────────────────
-    // COMMENCER LIAISON
-    // ─────────────────────────────
-
-    if (
-      request.method ===
-        'POST' &&
-      requestUrl.pathname ===
-        '/gta/link/start'
-    ) {
-      const requestId =
-        generateRequestId();
-
-      const code =
-        createUniqueCode();
-
-      const createdAt =
-        Date.now();
-
-      pendingLinks.set(
-        requestId,
-        {
-          code,
-
-          createdAt,
-
-          expiresAt:
-            createdAt +
-            LINK_CODE_DURATION,
-
-          discordId:
-            null,
-
-          token:
-            null,
-
-          installationId:
-            null,
-
-          completed:
-            false,
-
-          retrieved:
-            false
-        }
-      );
-
-      console.log(
-        `🔗 Nouvelle demande GTA : ${code}`
-      );
-
-      sendJson(
-        response,
-        200,
-        {
-          ok: true,
-
-          requestId,
-
-          code,
-
-          expiresIn:
-            600
-        }
-      );
-
-      return true;
-    }
-
-    // ─────────────────────────────
-    // ÉTAT LIAISON
-    // ─────────────────────────────
-
-    if (
-      request.method ===
-        'GET' &&
-      requestUrl.pathname.startsWith(
-        '/gta/link/status/'
-      )
-    ) {
-      const requestId =
-        requestUrl.pathname
-          .split('/')
-          .pop();
-
-      const link =
-        pendingLinks.get(
-          requestId
-        );
-
-      if (!link) {
-        sendJson(
-          response,
-          404,
-          {
-            ok: false,
-
-            status:
-              'expired_or_unknown'
-          }
-        );
-
-        return true;
+        discordId: null,
+        token: null,
+        installationId: null,
+        completed: false,
+        retrieved: false
       }
+    );
 
-      if (
-        !link.completed
-      ) {
-        sendJson(
-          response,
-          200,
-          {
-            ok: true,
-
-            status:
-              'waiting'
-          }
-        );
-
-        return true;
-      }
-
-      if (
-        link.retrieved
-      ) {
-        sendJson(
-          response,
-          410,
-          {
-            ok: false,
-
-            status:
-              'already_retrieved'
-          }
-        );
-
-        return true;
-      }
-
-      link.retrieved =
-        true;
-
-      sendJson(
-        response,
-        200,
-        {
-          ok: true,
-
-          status:
-            'linked',
-
-          discordId:
-            link.discordId,
-
-          installationId:
-            link.installationId,
-
-          token:
-            link.token
-        }
-      );
-
-      setTimeout(
-        () => {
-          pendingLinks.delete(
-            requestId
-          );
-        },
-        5000
-      );
-
-      return true;
-    }
-
-    // ─────────────────────────────
-    // TÉLÉMÉTRIE GTA
-    // ─────────────────────────────
-
-    if (
-      request.method ===
-        'POST' &&
-      requestUrl.pathname ===
-        '/gta/telemetry'
-    ) {
-      return await handleTelemetry(
-        request,
-        response
-      );
-    }
-
-    // Route GTA inconnue.
+    console.log(
+      `🔗 Nouvelle demande GTA : ${code}`
+    );
 
     sendJson(
       response,
-      404,
+      200,
       {
-        ok: false,
-
-        error:
-          'Route GTA inconnue'
+        ok: true,
+        requestId,
+        code,
+        expiresIn: 600
       }
     );
 
     return true;
+  }
 
-  } catch (error) {
-    console.error(
-      '❌ Erreur route GTA :',
-      error
-    );
+  if (
+    request.method === 'GET' &&
+    requestUrl.pathname.startsWith(
+      '/gta/link/status/'
+    )
+  ) {
+    const requestId =
+      requestUrl.pathname
+        .split('/')
+        .pop();
 
-    if (
-      !response.headersSent
-    ) {
+    const link =
+      pendingLinks.get(requestId);
+
+    if (!link) {
       sendJson(
         response,
-        500,
+        404,
         {
           ok: false,
-
-          error:
-            'Erreur serveur GTA'
+          status:
+            'expired_or_unknown'
         }
       );
+
+      return true;
     }
+
+    if (Date.now() > link.expiresAt) {
+      pendingLinks.delete(requestId);
+
+      sendJson(
+        response,
+        404,
+        {
+          ok: false,
+          status:
+            'expired_or_unknown'
+        }
+      );
+
+      return true;
+    }
+
+    if (!link.completed) {
+      sendJson(
+        response,
+        200,
+        {
+          ok: true,
+          status: 'waiting'
+        }
+      );
+
+      return true;
+    }
+
+    if (link.retrieved) {
+      sendJson(
+        response,
+        410,
+        {
+          ok: false,
+          status:
+            'already_retrieved'
+        }
+      );
+
+      return true;
+    }
+
+    link.retrieved = true;
+
+    sendJson(
+      response,
+      200,
+      {
+        ok: true,
+        status: 'linked',
+        discordId:
+          link.discordId,
+        installationId:
+          link.installationId,
+        token:
+          link.token
+      }
+    );
+
+    // Le token n'est renvoyé qu'une seule fois.
+    link.token = null;
+
+    setTimeout(
+      () => {
+        pendingLinks.delete(requestId);
+      },
+      5000
+    );
 
     return true;
   }
+
+  return false;
 }
 
-// ─────────────────────────────────────
+// ============================================================
 // COMMANDE /LIER GTA
-// ─────────────────────────────────────
+// ============================================================
 
 async function registerCommands(
   client
@@ -1795,9 +595,7 @@ async function registerCommands(
                   .setDescription(
                     'Code affiché par Naru GTA Bridge Installer'
                   )
-                  .setRequired(
-                    true
-                  )
+                  .setRequired(true)
             )
       );
 
@@ -1811,9 +609,7 @@ async function registerCommands(
 
       const current =
         existing.find(
-          cmd =>
-            cmd.name ===
-            'lier'
+          cmd => cmd.name === 'lier'
         );
 
       if (current) {
@@ -1825,7 +621,6 @@ async function registerCommands(
         console.log(
           `🔄 Commande /lier mise à jour sur ${guild.name}`
         );
-
       } else {
         await guild.commands.create(
           command.toJSON()
@@ -1835,7 +630,6 @@ async function registerCommands(
           `✅ Commande /lier créée sur ${guild.name}`
         );
       }
-
     } catch (error) {
       console.error(
         `❌ Impossible d'enregistrer /lier sur ${guild.name} :`,
@@ -1845,34 +639,21 @@ async function registerCommands(
   }
 }
 
-// ─────────────────────────────────────
-// TRAITER /LIER GTA
-// ─────────────────────────────────────
-
 async function handleInteraction(
   interaction
 ) {
-  if (
-    !interaction.isChatInputCommand()
-  ) {
+  if (!interaction.isChatInputCommand()) {
     return;
   }
 
-  if (
-    interaction.commandName !==
-      'lier'
-  ) {
+  if (interaction.commandName !== 'lier') {
     return;
   }
 
   const subcommand =
-    interaction.options
-      .getSubcommand();
+    interaction.options.getSubcommand();
 
-  if (
-    subcommand !==
-      'gta'
-  ) {
+  if (subcommand !== 'gta') {
     return;
   }
 
@@ -1885,9 +666,7 @@ async function handleInteraction(
       await interaction.reply({
         content:
           '❌ Tu dois avoir le rôle **GTA V** pour utiliser Naru GTA Bridge.',
-
-        ephemeral:
-          true
+        ephemeral: true
       });
 
       return;
@@ -1895,45 +674,32 @@ async function handleInteraction(
 
     const code =
       interaction.options
-        .getString(
-          'code',
-          true
-        )
+        .getString('code', true)
         .trim()
         .toUpperCase();
 
     cleanExpiredRequests();
 
     const result =
-      findRequestByCode(
-        code
-      );
+      findRequestByCode(code);
 
     if (!result) {
       await interaction.reply({
         content:
           '❌ Ce code GTA est invalide ou a expiré.',
-
-        ephemeral:
-          true
+        ephemeral: true
       });
 
       return;
     }
 
-    const {
-      request
-    } = result;
+    const { request } = result;
 
-    if (
-      request.completed
-    ) {
+    if (request.completed) {
       await interaction.reply({
         content:
           '❌ Ce code a déjà été utilisé.',
-
-        ephemeral:
-          true
+        ephemeral: true
       });
 
       return;
@@ -1951,14 +717,12 @@ async function handleInteraction(
     request.discordId =
       interaction.user.id;
 
-    request.token =
-      token;
+    request.token = token;
 
     request.installationId =
       installationId;
 
-    request.completed =
-      true;
+    request.completed = true;
 
     console.log(
       `✅ GTA Bridge lié à ${interaction.user.tag} (${installationId})`
@@ -1972,11 +736,8 @@ async function handleInteraction(
         '',
         'Tu peux retourner dans **Naru GTA Bridge Installer**. La connexion sera détectée automatiquement.'
       ].join('\n'),
-
-      ephemeral:
-        true
+      ephemeral: true
     });
-
   } catch (error) {
     console.error(
       '❌ Erreur /lier gta :',
@@ -1990,55 +751,32 @@ async function handleInteraction(
       await interaction.followUp({
         content:
           '❌ Une erreur est survenue pendant la liaison GTA.',
-
-        ephemeral:
-          true
+        ephemeral: true
       });
-
     } else {
       await interaction.reply({
         content:
           '❌ Une erreur est survenue pendant la liaison GTA.',
-
-        ephemeral:
-          true
+        ephemeral: true
       });
     }
   }
 }
 
-// ─────────────────────────────────────
-// DÉMARRAGE MODULE
-// ─────────────────────────────────────
+// ============================================================
+// START
+// ============================================================
 
 function startGtaLink(
   client
 ) {
-  gtaClient =
-    client;
-
-  if (!client.gtaBridge) {
-    client.gtaBridge = {
-      players:
-        new Map(),
-
-      previousStates:
-        new Map(),
-
-      messages:
-        new Map()
-    };
-  }
-
   console.log(
     '🔗 GTA Bridge Link : module chargé'
   );
 
   ensureDataFile();
 
-  registerCommands(
-    client
-  );
+  registerCommands(client);
 
   client.on(
     'interactionCreate',
@@ -2051,13 +789,11 @@ function startGtaLink(
   );
 }
 
-// ─────────────────────────────────────
-// EXPORTS
-// ─────────────────────────────────────
-
 module.exports = {
   startGtaLink,
-  handleGtaRequest,
+  handleGtaLinkRequest,
+  authenticateGta,
+  findInstallation,
   hashToken,
   loadData,
   saveData
