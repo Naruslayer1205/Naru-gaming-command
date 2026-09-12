@@ -1,5 +1,3 @@
-const http = require('http');
-
 const {
   findPlayerCategory
 } = require('./player-spaces');
@@ -9,20 +7,13 @@ const {
   startArkChallengeSystem
 } = require('./ark-challenge-system');
 
-const PORT =
-  Number(
-    process.env.ARK_BRIDGE_PORT
-  ) ||
-  Number(
-    process.env.PORT
-  ) ||
-  25070;
-
 const ARK_BRIDGE_SECRET =
   process.env.ARK_BRIDGE_SECRET;
 
 const ARK_ROLE_ID =
   process.env.ARK_ROLE_ID;
+
+let arkClient = null;
 
 // ─────────────────────────────────────
 // SALONS
@@ -52,12 +43,14 @@ const CHANNELS = {
 };
 
 // ─────────────────────────────────────
-// DÉMARRAGE
+// DÉMARRAGE ARK
 // ─────────────────────────────────────
 
 function startArkBridge(
   client
 ) {
+  arkClient = client;
+
   console.log(
     '🦖 ARK Bridge : module chargé'
   );
@@ -91,9 +84,6 @@ function startArkBridge(
     };
   }
 
-  // Démarrage du système automatique de défis ARK.
-  // Toutes les 30 secondes, il compare la date affichée
-  // dans le message Discord à la date actuelle de Paris.
   try {
     startArkChallengeSystem(
       client
@@ -104,355 +94,309 @@ function startArkBridge(
       error
     );
   }
+}
 
-  const server =
-    http.createServer(
-      async (
-        req,
-        res
-      ) => {
-        try {
+// ─────────────────────────────────────
+// ROUTES API ARK
+// ─────────────────────────────────────
 
-          // ─────────────────────────
-          // STATUS API
-          // ─────────────────────────
+async function handleArkRequest(
+  req,
+  res
+) {
+  if (
+    !req.url ||
+    !req.url.startsWith('/api/ark/')
+  ) {
+    return false;
+  }
 
-          if (
-            req.method === 'GET' &&
-            req.url ===
-              '/api/ark/status'
-          ) {
-            return sendJson(
-              res,
-              200,
-              {
-                success:
-                  true,
-
-                service:
-                  'Naru ARK Bridge',
-
-                connectedPlayers:
-                  client.arkBridge.players.size
-              }
-            );
-          }
-
-          // ─────────────────────────
-          // UPDATE ARK
-          // ─────────────────────────
-
-          if (
-            req.method === 'POST' &&
-            req.url ===
-              '/api/ark/update'
-          ) {
-            const authHeader =
-              req.headers[
-                'x-ark-bridge-secret'
-              ];
-
-            if (
-              !authHeader ||
-              authHeader !==
-                ARK_BRIDGE_SECRET
-            ) {
-              console.log(
-                '⛔ ARK Bridge : tentative non autorisée'
-              );
-
-              return sendJson(
-                res,
-                401,
-                {
-                  success:
-                    false,
-
-                  error:
-                    'Unauthorized'
-                }
-              );
-            }
-
-            const body =
-              await readJsonBody(
-                req
-              );
-
-            if (!body) {
-              return sendJson(
-                res,
-                400,
-                {
-                  success:
-                    false,
-
-                  error:
-                    'JSON invalide'
-                }
-              );
-            }
-
-            const discordUserId =
-              body.discordUserId;
-
-            if (!discordUserId) {
-              return sendJson(
-                res,
-                400,
-                {
-                  success:
-                    false,
-
-                  error:
-                    'discordUserId manquant'
-                }
-              );
-            }
-
-            // ─────────────────────────
-            // TROUVER LE MEMBRE
-            // ─────────────────────────
-
-            const memberResult =
-              await findArkMember(
-                client,
-                discordUserId
-              );
-
-            if (!memberResult) {
-              console.log(
-                `⛔ ARK : utilisateur ${discordUserId} introuvable`
-              );
-
-              return sendJson(
-                res,
-                403,
-                {
-                  success:
-                    false,
-
-                  error:
-                    'Utilisateur Discord introuvable'
-                }
-              );
-            }
-
-            const {
-              guild,
-              member
-            } =
-              memberResult;
-
-            // ─────────────────────────
-            // VÉRIFICATION RÔLE
-            // ─────────────────────────
-
-            if (
-              !member.roles.cache.has(
-                ARK_ROLE_ID
-              )
-            ) {
-              console.log(
-                `⛔ ARK : ${member.user.tag} ne possède pas le rôle ARK`
-              );
-
-              return sendJson(
-                res,
-                403,
-                {
-                  success:
-                    false,
-
-                  error:
-                    'Rôle ARK requis'
-                }
-              );
-            }
-
-            // ─────────────────────────
-            // CATÉGORIE
-            // ─────────────────────────
-
-            const category =
-              findPlayerCategory(
-                guild,
-                member.id
-              );
-
-            if (!category) {
-              console.log(
-                `⚠️ Espace ARK absent pour ${member.user.tag}`
-              );
-
-              return sendJson(
-                res,
-                409,
-                {
-                  success:
-                    false,
-
-                  error:
-                    'Espace ARK non créé'
-                }
-              );
-            }
-
-            const receivedAt =
-              new Date().toISOString();
-
-            const state = {
-              ...body,
-              receivedAt
-            };
-
-            // État précédent pour le journal
-            const previous =
-              client.arkBridge
-                .previousStates
-                .get(
-                  discordUserId
-                );
-
-            client.arkBridge
-              .players
-              .set(
-                discordUserId,
-                state
-              );
-
-            // ─────────────────────────
-            // DISCORD
-            // ─────────────────────────
-
-            await updateArkDiscord(
-              client,
-              member,
-              category,
-              state,
-              previous,
-              body.syncScope || 'full'
-            );
-
-            client.arkBridge
-              .previousStates
-              .set(
-                discordUserId,
-                state
-              );
-
-            console.log('');
-            console.log(
-              '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
-            );
-
-            console.log(
-              '📡 DONNÉES ARK REÇUES'
-            );
-
-            console.log(
-              '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
-            );
-
-            console.log(
-              `👤 Discord : ${member.user.tag}`
-            );
-
-            console.log(
-              `🗺️ Map : ${
-                body.map ||
-                '?'
-              }`
-            );
-
-            console.log(
-              `👤 Joueurs : ${
-                body.ark
-                  ?.players
-                  ?.length ?? 0
-              }`
-            );
-
-            console.log(
-              `🦖 Dinos tamés : ${
-                body.ark
-                  ?.dinos
-                  ?.tamed
-                  ?.length ?? 0
-              }`
-            );
-
-            console.log(
-              `🌿 Dinos sauvages : ${
-                body.ark
-                  ?.dinos
-                  ?.wild
-                  ?.length ?? 0
-              }`
-            );
-
-            console.log(
-              `🕒 ${receivedAt}`
-            );
-
-            return sendJson(
-              res,
-              200,
-              {
-                success:
-                  true,
-
-                message:
-                  'Données ARK reçues et Discord mis à jour'
-              }
-            );
-          }
-
-          return sendJson(
-            res,
-            404,
-            {
-              success:
-                false,
-
-              error:
-                'Not found'
-            }
-          );
-
-        } catch (error) {
-          console.error(
-            '❌ Erreur ARK Bridge API :',
-            error
-          );
-
-          return sendJson(
-            res,
-            500,
-            {
-              success:
-                false,
-
-              error:
-                'Internal server error'
-            }
-          );
-        }
+  if (!arkClient) {
+    sendJson(
+      res,
+      503,
+      {
+        success: false,
+        error: 'ARK Bridge non initialisé'
       }
     );
 
-  server.listen(
-    PORT,
-    '0.0.0.0',
-    () => {
+    return true;
+  }
+
+  const client = arkClient;
+
+  try {
+    // ─────────────────────────
+    // STATUS API
+    // ─────────────────────────
+
+    if (
+      req.method === 'GET' &&
+      req.url === '/api/ark/status'
+    ) {
+      sendJson(
+        res,
+        200,
+        {
+          success: true,
+          service: 'Naru ARK Bridge',
+          connectedPlayers:
+            client.arkBridge.players.size
+        }
+      );
+
+      return true;
+    }
+
+    // ─────────────────────────
+    // UPDATE ARK
+    // ─────────────────────────
+
+    if (
+      req.method === 'POST' &&
+      req.url === '/api/ark/update'
+    ) {
+      const authHeader =
+        req.headers[
+          'x-ark-bridge-secret'
+        ];
+
+      if (
+        !authHeader ||
+        authHeader !== ARK_BRIDGE_SECRET
+      ) {
+        console.log(
+          '⛔ ARK Bridge : tentative non autorisée'
+        );
+
+        sendJson(
+          res,
+          401,
+          {
+            success: false,
+            error: 'Unauthorized'
+          }
+        );
+
+        return true;
+      }
+
+      const body =
+        await readJsonBody(
+          req
+        );
+
+      if (!body) {
+        sendJson(
+          res,
+          400,
+          {
+            success: false,
+            error: 'JSON invalide'
+          }
+        );
+
+        return true;
+      }
+
+      const discordUserId =
+        body.discordUserId;
+
+      if (!discordUserId) {
+        sendJson(
+          res,
+          400,
+          {
+            success: false,
+            error: 'discordUserId manquant'
+          }
+        );
+
+        return true;
+      }
+
+      const memberResult =
+        await findArkMember(
+          client,
+          discordUserId
+        );
+
+      if (!memberResult) {
+        console.log(
+          `⛔ ARK : utilisateur ${discordUserId} introuvable`
+        );
+
+        sendJson(
+          res,
+          403,
+          {
+            success: false,
+            error: 'Utilisateur Discord introuvable'
+          }
+        );
+
+        return true;
+      }
+
+      const {
+        guild,
+        member
+      } = memberResult;
+
+      if (
+        !member.roles.cache.has(
+          ARK_ROLE_ID
+        )
+      ) {
+        console.log(
+          `⛔ ARK : ${member.user.tag} ne possède pas le rôle ARK`
+        );
+
+        sendJson(
+          res,
+          403,
+          {
+            success: false,
+            error: 'Rôle ARK requis'
+          }
+        );
+
+        return true;
+      }
+
+      const category =
+        findPlayerCategory(
+          guild,
+          member.id
+        );
+
+      if (!category) {
+        console.log(
+          `⚠️ Espace ARK absent pour ${member.user.tag}`
+        );
+
+        sendJson(
+          res,
+          409,
+          {
+            success: false,
+            error: 'Espace ARK non créé'
+          }
+        );
+
+        return true;
+      }
+
+      const receivedAt =
+        new Date().toISOString();
+
+      const state = {
+        ...body,
+        receivedAt
+      };
+
+      const previous =
+        client.arkBridge
+          .previousStates
+          .get(
+            discordUserId
+          );
+
+      client.arkBridge
+        .players
+        .set(
+          discordUserId,
+          state
+        );
+
+      await updateArkDiscord(
+        client,
+        member,
+        category,
+        state,
+        previous,
+        body.syncScope || 'full'
+      );
+
+      client.arkBridge
+        .previousStates
+        .set(
+          discordUserId,
+          state
+        );
+
+      console.log('');
       console.log(
-        `📡 ARK Bridge API : port ${PORT}`
+        '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+      );
+      console.log(
+        '📡 DONNÉES ARK REÇUES'
+      );
+      console.log(
+        '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+      );
+      console.log(
+        `👤 Discord : ${member.user.tag}`
+      );
+      console.log(
+        `🗺️ Map : ${body.map || '?'}`
+      );
+      console.log(
+        `👤 Joueurs : ${body.ark?.players?.length ?? 0}`
+      );
+      console.log(
+        `🦖 Dinos tamés : ${body.ark?.dinos?.tamed?.length ?? 0}`
+      );
+      console.log(
+        `🌿 Dinos sauvages : ${body.ark?.dinos?.wild?.length ?? 0}`
+      );
+      console.log(
+        `🕒 ${receivedAt}`
+      );
+
+      sendJson(
+        res,
+        200,
+        {
+          success: true,
+          message:
+            'Données ARK reçues et Discord mis à jour'
+        }
+      );
+
+      return true;
+    }
+
+    sendJson(
+      res,
+      404,
+      {
+        success: false,
+        error: 'Route ARK inconnue'
+      }
+    );
+
+    return true;
+  } catch (error) {
+    console.error(
+      '❌ Erreur ARK Bridge API :',
+      error
+    );
+
+    if (!res.headersSent) {
+      sendJson(
+        res,
+        500,
+        {
+          success: false,
+          error: 'Internal server error'
+        }
       );
     }
-  );
 
-  client.arkBridge.server =
-    server;
+    return true;
+  }
 }
 
 // ─────────────────────────────────────
@@ -1682,5 +1626,7 @@ function sendJson(
   );
 }
 
-module.exports =
-  startArkBridge;
+module.exports = {
+  startArkBridge,
+  handleArkRequest
+};
