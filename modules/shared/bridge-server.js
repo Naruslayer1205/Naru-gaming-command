@@ -12,6 +12,10 @@ const {
   handleAtsEtsBridgeRequest
 } = require('../ATS-ETS/ats-ets-bridge');
 
+const {
+  handleAColonyBridgeRequest
+} = require('../acolony/acolony-bridge');
+
 const PORT =
   Number(process.env.SERVER_PORT) ||
   Number(process.env.BRIDGE_PORT) ||
@@ -95,6 +99,16 @@ function startBridgeServer(
             return;
           }
 
+          const acolonyHandled =
+            await handleAColonyBridgeRequest(
+              request,
+              response
+            );
+
+          if (acolonyHandled) {
+            return;
+          }
+
           sendJson(
             response,
             404,
@@ -156,6 +170,9 @@ function startBridgeServer(
       );
       console.log(
         '🚛 ATS/ETS2 → /truck/...'
+      );
+      console.log(
+        '🏭 AColony  → /acolony/...'
       );
       console.log(
         '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
