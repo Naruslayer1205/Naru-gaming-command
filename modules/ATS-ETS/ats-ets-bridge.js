@@ -1,4 +1,3 @@
-const http = require('http');
 const { URL } = require('url');
 
 const {
@@ -8,16 +7,9 @@ const {
   saveData
 } = require('./ats-ets-link');
 
-const PORT =
-  Number(process.env.TRUCK_BRIDGE_PORT) ||
-  Number(process.env.ATS_ETS_BRIDGE_PORT) ||
-  25080;
-
-const HOST = '0.0.0.0';
 const MAX_BODY_SIZE = 1024 * 1024;
 
 let truckClient = null;
-let server = null;
 
 const playerStates = new Map();
 
@@ -842,14 +834,13 @@ async function handleRequest(
 }
 
 // ============================================================
-// START
+// START / ROUTEUR PARTAGÉ
 // ============================================================
 
 function startAtsEtsBridge(
   client
 ) {
-  truckClient =
-    client;
+  truckClient = client;
 
   if (
     !client.truckBridge
@@ -866,114 +857,33 @@ function startAtsEtsBridge(
     };
   }
 
-  if (server) {
-    console.log(
-      '⚠️ Truck Bridge déjà démarré.'
-    );
-
-    return server;
-  }
-
-  server =
-    http.createServer(
-      (
-        request,
-        response
-      ) => {
-        handleRequest(
-          request,
-          response
-        ).catch(
-          error => {
-            console.error(
-              '❌ Erreur requête Truck Bridge :',
-              error
-            );
-
-            if (
-              !response.headersSent
-            ) {
-              sendJson(
-                response,
-                500,
-                {
-                  ok: false,
-                  error:
-                    'Erreur interne Truck Bridge'
-                }
-              );
-            }
-          }
-        );
-      }
-    );
-
-  server.on(
-    'error',
-    error => {
-      console.error(
-        '❌ Truck Bridge HTTP :',
-        error
-      );
-    }
+  console.log(
+    '🚛 ATS / ETS2 Bridge : module chargé'
   );
-
-  server.listen(
-    PORT,
-    HOST,
-    () => {
-      console.log(
-        '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
-      );
-
-      console.log(
-        '🚛 NARU TRUCK BRIDGE'
-      );
-
-      console.log(
-        `✅ Serveur ATS / ETS2 actif sur le port ${PORT}`
-      );
-
-      console.log(
-        `🌐 http://${HOST}:${PORT}`
-      );
-
-      console.log(
-        '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
-      );
-    }
-  );
-
-  return server;
 }
 
-// ============================================================
-// STOP
-// ============================================================
-
-function stopAtsEtsBridge() {
-  if (!server) {
-    return;
+async function handleAtsEtsBridgeRequest(
+  request,
+  response
+) {
+  if (
+    !request.url ||
+    !request.url.startsWith('/truck/')
+  ) {
+    return false;
   }
 
-  server.close(
-    () => {
-      console.log(
-        '🛑 Naru Truck Bridge arrêté.'
-      );
-    }
+  await handleRequest(
+    request,
+    response
   );
 
-  server = null;
+  return true;
 }
-
-// ============================================================
-// EXPORTS
-// ============================================================
 
 module.exports = {
   startAtsEtsBridge,
-  stopAtsEtsBridge,
+  handleAtsEtsBridgeRequest,
   handleRequest,
   handleTelemetry,
   getPlayerState
