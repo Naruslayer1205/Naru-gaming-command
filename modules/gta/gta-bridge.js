@@ -1,4 +1,5 @@
 const { URL } = require('url');
+const { ChannelType } = require('discord.js');
 
 const {
   findPlayerCategory
@@ -35,6 +36,8 @@ const CHANNELS = {
     '🚗・vehicule',
   statistics:
     '📊・statistiques',
+  mods:
+    '🧩・mods',
   journal:
     '📜・journal',
   commands:
@@ -504,6 +507,167 @@ function buildStatisticsMessage(
   ].join('\n');
 }
 
+function buildModsMessage(
+  state
+) {
+  const mods =
+    state.mods || {};
+
+  const root =
+    Array.isArray(mods.root)
+      ? mods.root
+      : [];
+
+  const scripts =
+    Array.isArray(mods.scripts)
+      ? mods.scripts
+      : [];
+
+  const total =
+    Number.isFinite(
+      Number(mods.count)
+    )
+      ? Number(mods.count)
+      : root.length + scripts.length;
+
+  const lines = [
+    '# 🧩 Mods GTA V',
+    '',
+    `📦 **Mods détectés : ${total}**`,
+    ''
+  ];
+
+  if (root.length) {
+    lines.push(
+      '## 📁 Racine GTA',
+      ''
+    );
+
+    for (
+      const mod
+      of root.slice(0, 25)
+    ) {
+      const name =
+        value(
+          mod?.name || mod?.file,
+          'Mod inconnu'
+        );
+
+      const type =
+        value(
+          mod?.type,
+          'Mod'
+        );
+
+      lines.push(
+        `• **${name}** — ${type}`
+      );
+    }
+
+    if (root.length > 25) {
+      lines.push(
+        `• … +${root.length - 25} autre(s)`
+      );
+    }
+
+    lines.push('');
+  }
+
+  if (scripts.length) {
+    lines.push(
+      '## 📜 Dossier scripts',
+      ''
+    );
+
+    for (
+      const mod
+      of scripts.slice(0, 25)
+    ) {
+      const name =
+        value(
+          mod?.name || mod?.file,
+          'Mod inconnu'
+        );
+
+      const type =
+        value(
+          mod?.type,
+          'Script'
+        );
+
+      lines.push(
+        `• **${name}** — ${type}`
+      );
+    }
+
+    if (scripts.length > 25) {
+      lines.push(
+        `• … +${scripts.length - 25} autre(s)`
+      );
+    }
+
+    lines.push('');
+  }
+
+  if (!root.length && !scripts.length) {
+    lines.push(
+      'Aucun mod détecté actuellement.',
+      ''
+    );
+  }
+
+  lines.push(
+    `🔄 Dernière synchronisation : <t:${unix(state.receivedAt)}:R>`
+  );
+
+  return limitDiscord(
+    lines.join('\n')
+  );
+}
+
+async function ensureModsChannel(
+  guild,
+  category
+) {
+  let channel =
+    getChannel(
+      guild,
+      category,
+      CHANNELS.mods
+    );
+
+  if (channel) {
+    return channel;
+  }
+
+  try {
+    channel =
+      await guild.channels.create({
+        name:
+          CHANNELS.mods,
+        type:
+          ChannelType.GuildText,
+        parent:
+          category.id,
+        reason:
+          'Naru GTA Bridge — salon mods automatique'
+      });
+
+    console.log(
+      `✅ GTA : salon ${CHANNELS.mods} créé dans ${category.name}`
+    );
+
+    return channel;
+  } catch (error) {
+    console.error(
+      '❌ GTA : impossible de créer le salon mods :',
+      error
+    );
+
+    return null;
+  }
+}
+
 function buildCommandsMessage(
   state,
   installationId
@@ -687,6 +851,12 @@ async function updateGtaDiscord(
       CHANNELS.statistics
     );
 
+  const mods =
+    await ensureModsChannel(
+      guild,
+      category
+    );
+
   const journal =
     getChannel(
       guild,
@@ -741,6 +911,18 @@ async function updateGtaDiscord(
       statistics,
       'statistics',
       buildStatisticsMessage(state)
+    );
+  }
+
+  if (mods) {
+    await upsertGtaMessage(
+      client,
+      member.id,
+      mods,
+      'mods',
+      buildModsMessage(
+        state
+      )
     );
   }
 
