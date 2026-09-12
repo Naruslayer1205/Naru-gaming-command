@@ -12,10 +12,6 @@ const {
   handleAtsEtsBridgeRequest
 } = require('../ATS-ETS/ats-ets-bridge');
 
-const {
-  handleAColonyBridgeRequest
-} = require('../acolony/acolony-bridge');
-
 const PORT =
   Number(process.env.SERVER_PORT) ||
   Number(process.env.BRIDGE_PORT) ||
@@ -26,35 +22,54 @@ const HOST = '0.0.0.0';
 
 let server = null;
 
+// ============================================================
+// ENVOI JSON
+// ============================================================
+
 function sendJson(
   response,
   statusCode,
   data
 ) {
-  if (response.headersSent) {
+  if (
+    response.headersSent
+  ) {
     return;
   }
 
   const payload =
-    JSON.stringify(data);
+    JSON.stringify(
+      data
+    );
 
   response.writeHead(
     statusCode,
     {
       'Content-Type':
         'application/json; charset=utf-8',
+
       'Content-Length':
-        Buffer.byteLength(payload)
+        Buffer.byteLength(
+          payload
+        )
     }
   );
 
-  response.end(payload);
+  response.end(
+    payload
+  );
 }
+
+// ============================================================
+// DÉMARRAGE DU BRIDGE HTTP COMMUN
+// ============================================================
 
 function startBridgeServer(
   client
 ) {
-  if (server) {
+  if (
+    server
+  ) {
     console.log(
       '⚠️ Bridge HTTP commun déjà démarré.'
     );
@@ -69,15 +84,26 @@ function startBridgeServer(
         response
       ) => {
         try {
+
+          // ==================================================
+          // GTA V
+          // ==================================================
+
           const gtaHandled =
             await handleGtaBridgeRequest(
               request,
               response
             );
 
-          if (gtaHandled) {
+          if (
+            gtaHandled
+          ) {
             return;
           }
+
+          // ==================================================
+          // ARK
+          // ==================================================
 
           const arkHandled =
             await handleArkRequest(
@@ -85,9 +111,15 @@ function startBridgeServer(
               response
             );
 
-          if (arkHandled) {
+          if (
+            arkHandled
+          ) {
             return;
           }
+
+          // ==================================================
+          // ATS / ETS2
+          // ==================================================
 
           const truckHandled =
             await handleAtsEtsBridgeRequest(
@@ -95,41 +127,46 @@ function startBridgeServer(
               response
             );
 
-          if (truckHandled) {
+          if (
+            truckHandled
+          ) {
             return;
           }
 
-          const acolonyHandled =
-            await handleAColonyBridgeRequest(
-              request,
-              response
-            );
-
-          if (acolonyHandled) {
-            return;
-          }
+          // ==================================================
+          // ROUTE INCONNUE
+          // ==================================================
 
           sendJson(
             response,
             404,
             {
-              ok: false,
+              ok:
+                false,
+
               error:
                 'Route Naru Gaming Command inconnue'
             }
           );
-        } catch (error) {
+
+        } catch (
+          error
+        ) {
           console.error(
             '❌ Erreur Bridge HTTP commun :',
             error
           );
 
-          if (!response.headersSent) {
+          if (
+            !response.headersSent
+          ) {
             sendJson(
               response,
               500,
               {
-                ok: false,
+                ok:
+                  false,
+
                 error:
                   'Erreur interne Bridge HTTP commun'
               }
@@ -138,6 +175,10 @@ function startBridgeServer(
         }
       }
     );
+
+  // ==========================================================
+  // ERREURS SERVEUR
+  // ==========================================================
 
   server.on(
     'error',
@@ -149,6 +190,10 @@ function startBridgeServer(
     }
   );
 
+  // ==========================================================
+  // LISTEN
+  // ==========================================================
+
   server.listen(
     PORT,
     HOST,
@@ -156,35 +201,46 @@ function startBridgeServer(
       console.log(
         '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
       );
+
       console.log(
         '🌐 NARU GAMING COMMAND — BRIDGE HTTP'
       );
+
       console.log(
         `✅ Port public unique : ${PORT}`
       );
+
       console.log(
         '🦖 ARK      → /api/ark/...'
       );
+
       console.log(
         '🚘 GTA V    → /gta/...'
       );
+
       console.log(
         '🚛 ATS/ETS2 → /truck/...'
       );
-      console.log(
-        '🏭 AColony  → /acolony/...'
-      );
+
       console.log(
         '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
       );
     }
   );
 
+  // ==========================================================
+  // STOCKAGE SUR LE CLIENT DISCORD
+  // ==========================================================
+
   client.bridgeServer =
     server;
 
   return server;
 }
+
+// ============================================================
+// EXPORTS
+// ============================================================
 
 module.exports = {
   startBridgeServer
