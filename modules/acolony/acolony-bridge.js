@@ -48,9 +48,11 @@ const DATA_FILE =
 // ÉTAT
 // ============================================================
 
-let discordClient = null;
+let discordClient =
+  null;
 
-let scanInterval = null;
+let scanInterval =
+  null;
 
 const playerStates =
   new Map();
@@ -204,20 +206,6 @@ function hashToken(
 // UTILISATEUR
 // ============================================================
 
-function getUserData(
-  userId
-) {
-  const data =
-    loadData();
-
-  return (
-    data.users[
-      String(userId)
-    ] ||
-    null
-  );
-}
-
 function ensureUserData(
   member
 ) {
@@ -233,9 +221,13 @@ function ensureUserData(
     false;
 
   if (
-    !data.users[userId]
+    !data.users[
+      userId
+    ]
   ) {
-    data.users[userId] = {
+    data.users[
+      userId
+    ] = {
       discordUserId:
         userId,
 
@@ -267,12 +259,14 @@ function ensureUserData(
   }
 
   if (
-    !data.users[userId]
-      .linkCode
+    !data.users[
+      userId
+    ].linkCode
   ) {
-    data.users[userId]
-      .linkCode =
-        generateLinkCode();
+    data.users[
+      userId
+    ].linkCode =
+      generateLinkCode();
 
     changed =
       true;
@@ -368,7 +362,8 @@ function authenticateInstallation(
   }
 
   const token =
-    match[1].trim();
+    match[1]
+      .trim();
 
   const tokenHash =
     hashToken(
@@ -602,6 +597,23 @@ async function findDiscordMember(
       .cache
       .values()
   ) {
+    const cachedMember =
+      guild.members.cache.get(
+        String(
+          userId
+        )
+      );
+
+    if (
+      cachedMember
+    ) {
+      return {
+        guild,
+        member:
+          cachedMember
+      };
+    }
+
     try {
       const member =
         await guild.members.fetch(
@@ -836,6 +848,7 @@ async function updateLinkPanel(
 
 // ============================================================
 // SYNCHRO PANNEAUX DE LIAISON
+// CACHE UNIQUEMENT -> PAS DE FETCH GLOBAL
 // ============================================================
 
 async function syncLinkPanels() {
@@ -852,29 +865,19 @@ async function syncLinkPanels() {
       .cache
       .values()
   ) {
-    let members;
+    const members =
+      guild.members.cache;
 
-    try {
-      members =
-        await guild.members.fetch();
-
-    } catch (
-      error
-    ) {
-      console.error(
-        '❌ AColony : récupération membres impossible :',
-        error.message
-      );
-
-      continue;
-    }
+    console.log(
+      `🏭 AColony : vérification de ${members.size} membre(s) en cache sur ${guild.name}`
+    );
 
     for (
       const member
       of members.values()
     ) {
       if (
-        member.user.bot
+        member.user?.bot
       ) {
         continue;
       }
@@ -909,7 +912,7 @@ async function syncLinkPanels() {
         error
       ) {
         console.error(
-          `❌ AColony : panneau liaison ${member.user.tag} :`,
+          `❌ AColony : panneau liaison ${member.user?.tag || member.id} :`,
           error.message
         );
       }
@@ -2264,7 +2267,9 @@ function startAColonyBridge(
     '🏭 AColony Bridge : module chargé'
   );
 
-  // Première vérification après démarrage.
+  // Première vérification
+  // 10 secondes après le démarrage.
+
   setTimeout(
     () => {
       syncLinkPanels()
@@ -2280,8 +2285,10 @@ function startAColonyBridge(
     10000
   );
 
-  // Permet également de détecter automatiquement
-  // les nouveaux joueurs ayant reçu le rôle AColony.
+  // Vérification légère toutes les 5 minutes.
+  // On utilise uniquement le cache Discord :
+  // aucun guild.members.fetch() global.
+
   if (
     !scanInterval
   ) {
@@ -2298,7 +2305,7 @@ function startAColonyBridge(
               }
             );
         },
-        30000
+        300000
       );
   }
 }
