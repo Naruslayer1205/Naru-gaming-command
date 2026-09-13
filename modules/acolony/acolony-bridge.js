@@ -44,6 +44,221 @@ let memberUpdateListenerStarted = false;
 
 const playerStates = new Map();
 
+
+const ACOLONY_ITEM_NAMES = new Map([
+  [256, 'Monnaie'],
+  [1000, 'Bois'],
+  [1010, 'Vêtements'],
+  [1055, 'Graines de plante à huile'],
+  [1120, 'Terre'],
+  [1121, 'Pierre'],
+  [1130, 'Minerai de fer'],
+  [1150, 'Acier'],
+  [1155, 'Or'],
+  [1210, 'Viande'],
+  [1250, 'Pommes de terre'],
+  [1251, 'Carottes'],
+  [1281, 'Repas végétarien'],
+  [1295, 'Nourriture animale (végétale)'],
+  [1296, 'Nourriture animale (viande)'],
+  [1575, 'Jeune arbre'],
+  [1650, 'Médicament simple'],
+  [12100, 'Pistolet'],
+  [25, 'Poulet'],
+  [35, 'Mouche'],
+  [36, 'Mouche guerrière'],
+  [45, 'Abeille'],
+  [46, 'Abeille guerrière'],
+  [55, 'Mille-pattes'],
+  [56, 'Mille-pattes combattant']
+]);
+
+const ACOLONY_WEATHER_NAMES = {
+  0: '☀️ Ensoleillé',
+  1: '🌧️ Pluvieux',
+  2: '⛈️ Tempête',
+  3: '🌋 Activité volcanique'
+};
+
+const ACOLONY_RESEARCH_TYPES = {
+  0: 'Science basique',
+  1: 'Science moderne',
+  2: 'Informatique',
+  3: 'Science nucléaire'
+};
+
+const DAILY_CHALLENGE_POOLS = {
+  easy: [
+    { metric: 'treesCut', title: 'Bûcheron du jour', action: 'Couper', unit: 'arbres', target: 10, points: 1 },
+    { metric: 'blocksMined', title: 'Petit mineur', action: 'Miner', unit: 'blocs', target: 20, points: 1 },
+    { metric: 'plantsSeeded', title: 'Premières cultures', action: 'Planter', unit: 'plantes', target: 8, points: 1 },
+    { metric: 'plantsHarvested', title: 'Petite récolte', action: 'Récolter', unit: 'plantes', target: 10, points: 1 },
+    { metric: 'buildingsBuilt', title: 'Petit chantier', action: 'Construire', unit: 'structures', target: 3, points: 1 },
+    { metric: 'animalsKilled', title: 'Chasse rapide', action: 'Éliminer', unit: 'animaux', target: 2, points: 1 }
+  ],
+  medium: [
+    { metric: 'treesCut', title: 'Exploitation forestière', action: 'Couper', unit: 'arbres', target: 30, points: 2 },
+    { metric: 'blocksMined', title: 'Mine active', action: 'Miner', unit: 'blocs', target: 75, points: 2 },
+    { metric: 'plantsSeeded', title: 'Agriculteur', action: 'Planter', unit: 'plantes', target: 25, points: 2 },
+    { metric: 'plantsHarvested', title: 'Bonne récolte', action: 'Récolter', unit: 'plantes', target: 30, points: 2 },
+    { metric: 'buildingsBuilt', title: 'Extension de la colonie', action: 'Construire', unit: 'structures', target: 10, points: 2 },
+    { metric: 'animalsButchered', title: 'Boucherie', action: 'Dépecer', unit: 'animaux', target: 6, points: 2 }
+  ],
+  hard: [
+    { metric: 'treesCut', title: 'Déforestation contrôlée', action: 'Couper', unit: 'arbres', target: 75, points: 3 },
+    { metric: 'blocksMined', title: 'Mineur acharné', action: 'Miner', unit: 'blocs', target: 200, points: 3 },
+    { metric: 'plantsSeeded', title: 'Grand cultivateur', action: 'Planter', unit: 'plantes', target: 60, points: 3 },
+    { metric: 'plantsHarvested', title: 'Moisson massive', action: 'Récolter', unit: 'plantes', target: 75, points: 3 },
+    { metric: 'buildingsBuilt', title: 'Grand bâtisseur', action: 'Construire', unit: 'structures', target: 25, points: 3 },
+    { metric: 'animalsKilled', title: 'Grand chasseur', action: 'Éliminer', unit: 'animaux', target: 20, points: 3 }
+  ]
+};
+
+function formatFrenchNumber(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '0';
+  return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 }).format(n);
+}
+
+function getAColonyItemName(id, fallbackName) {
+  const numericId = Number(id);
+  if (ACOLONY_ITEM_NAMES.has(numericId)) return ACOLONY_ITEM_NAMES.get(numericId);
+  if (fallbackName && !/^Objet\s*#/i.test(String(fallbackName))) return String(fallbackName);
+  return `Objet #${numericId}`;
+}
+
+function translateBuildingName(name) {
+  const raw = String(name || '').trim();
+  const exact = {
+    'Craft': 'Atelier de fabrication',
+    'Science': 'Table de recherche',
+    'Power Generator': 'Générateur électrique',
+    'Power Storage': 'Stockage électrique',
+    'Power Cable': 'Câble électrique',
+    'Feeder': 'Mangeoire',
+    'Animal Cage': 'Cage animale',
+    'Cooling': 'Système de refroidissement',
+    'Ventilation': 'Ventilation',
+    'Sprinkler': 'Arroseur',
+    'Pump': 'Pompe',
+    'Reactor': 'Réacteur',
+    'Disposal': 'Traitement des déchets',
+    'Mineral Resource': 'Installation minière'
+  };
+  if (exact[raw]) return exact[raw];
+  for (const [key, value] of Object.entries(exact)) {
+    if (raw.toLowerCase().includes(key.toLowerCase())) {
+      return raw.replace(new RegExp(key, 'i'), value);
+    }
+  }
+  return raw || 'Installation';
+}
+
+function formatDayTime(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 'Inconnue';
+  const normalized = ((n % 1) + 1) % 1;
+  const totalMinutes = Math.floor(normalized * 24 * 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+}
+
+function getParisDateKey(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('fr-FR', {
+    timeZone: 'Europe/Paris',
+    year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+function deterministicIndex(seed, length) {
+  if (length <= 0) return 0;
+  const hash = crypto.createHash('sha256').update(seed).digest();
+  return hash.readUInt32BE(0) % length;
+}
+
+function normalizeGameStats(stats) {
+  const source = stats && typeof stats === 'object' ? stats : {};
+  const keys = [
+    'animalsKilled', 'animalsButchered', 'treesCut', 'blocksMined',
+    'plantsSeeded', 'plantsHarvested', 'buildingsBuilt'
+  ];
+  const result = {};
+  for (const key of keys) result[key] = Math.max(0, Number(source[key]) || 0);
+  return result;
+}
+
+function buildDailyChallengeEntries(userId, dateKey) {
+  const difficulties = ['easy', 'medium', 'hard'];
+  const usedMetrics = new Set();
+  const entries = [];
+
+  for (const difficulty of difficulties) {
+    const pool = DAILY_CHALLENGE_POOLS[difficulty];
+    const start = deterministicIndex(`${dateKey}:${userId}:${difficulty}`, pool.length);
+    let selected = pool[start];
+    for (let offset = 0; offset < pool.length; offset++) {
+      const candidate = pool[(start + offset) % pool.length];
+      if (!usedMetrics.has(candidate.metric)) {
+        selected = candidate;
+        break;
+      }
+    }
+    usedMetrics.add(selected.metric);
+    entries.push({ difficulty, ...selected, completed: false, completedAt: null });
+  }
+  return entries;
+}
+
+function updateDailyChallenges(userId, gameStats) {
+  if (!gameStats || typeof gameStats !== 'object') return null;
+
+  const current = normalizeGameStats(gameStats);
+  const dateKey = getParisDateKey();
+  const data = loadData();
+  const user = data.users[String(userId)];
+  if (!user) return null;
+
+  if (!user.acolonyChallenges || user.acolonyChallenges.date !== dateKey) {
+    user.acolonyChallenges = {
+      date: dateKey,
+      baseline: current,
+      entries: buildDailyChallengeEntries(String(userId), dateKey)
+    };
+  }
+
+  if (!Number.isFinite(Number(user.acolonyChallengePoints))) {
+    user.acolonyChallengePoints = 0;
+  }
+
+  const baseline = normalizeGameStats(user.acolonyChallenges.baseline);
+  let changed = false;
+
+  for (const entry of user.acolonyChallenges.entries) {
+    const progress = Math.max(0, (current[entry.metric] || 0) - (baseline[entry.metric] || 0));
+    if (!entry.completed && progress >= entry.target) {
+      entry.completed = true;
+      entry.completedAt = new Date().toISOString();
+      user.acolonyChallengePoints += Number(entry.points) || 0;
+      changed = true;
+    }
+  }
+
+  data.users[String(userId)] = user;
+  saveData(data);
+
+  return {
+    date: dateKey,
+    baseline,
+    current,
+    entries: user.acolonyChallenges.entries,
+    totalPoints: user.acolonyChallengePoints,
+    newlyCompleted: changed
+  };
+}
+
 function ensureDataFile() {
   if (!fs.existsSync(DATA_FOLDER)) fs.mkdirSync(DATA_FOLDER, { recursive: true });
   if (!fs.existsSync(DATA_FILE)) {
@@ -1069,89 +1284,139 @@ function createColonyEmbed(state) {
 }
 
 function createStorageEmbed(state) {
-  const storage = state.storage ?? state.storages ?? state.inventory ?? state.resources ?? null;
+  const storage = Array.isArray(state.storage) ? state.storage : [];
+  const lines = [];
+
+  if (storage.length > 0) {
+    for (const item of storage.slice(0, 35)) {
+      const id = Number(item.id ?? item.Id ?? 0);
+      const name = getAColonyItemName(id, item.name ?? item.Name);
+      const count = item.count ?? item.Count ?? 0;
+      lines.push(`• **${name}** : ${formatFrenchNumber(count)}`);
+    }
+  }
+
   return buildBaseEmbed('📦 Stockage', 0xFEE75C, 'AColony • Stockage', state)
     .setDescription(
-      storage !== null
-        ? summarizeCollection(storage)
-        : [
-            'La sauvegarde est bien synchronisée.',
-            '',
-            '⚠️ La version actuelle du Bridge ne transmet pas encore le détail des ressources stockées.',
-            'Ce salon se mettra automatiquement à jour dès que ces données seront envoyées.'
-          ].join('\n')
+      lines.length > 0
+        ? lines.join('\n')
+        : '📭 Aucun objet stocké détecté dans les zones de stockage de la colonie.'
     );
 }
 
 function createProductionEmbed(state) {
-  const production = state.production ?? state.productions ?? state.machines ?? null;
+  const production = state.production && typeof state.production === 'object' ? state.production : null;
+  const machines = Array.isArray(production?.machines) ? production.machines : [];
+  const totalMachines = Number(production?.totalMachines) || machines.reduce((sum, item) => sum + (Number(item.count) || 0), 0);
+
+  const lines = [
+    `🏭 **Installations de production :** ${formatFrenchNumber(totalMachines)}`
+  ];
+
+  if (machines.length > 0) {
+    lines.push('', '### ⚙️ Détail');
+    for (const machine of machines.slice(0, 25)) {
+      const name = translateBuildingName(machine.name ?? machine.Name);
+      const count = machine.count ?? machine.Count ?? 0;
+      lines.push(`• **${name}** : ${formatFrenchNumber(count)}`);
+    }
+  } else {
+    lines.push('', 'Aucune installation de production détectée.');
+  }
+
   return buildBaseEmbed('🏭 Production', 0xE67E22, 'AColony • Production', state)
-    .setDescription(
-      production !== null
-        ? summarizeCollection(production)
-        : [
-            'La sauvegarde est bien synchronisée.',
-            '',
-            '⚠️ Le détail des machines, files de production et rendements n’est pas encore transmis par le Bridge.'
-          ].join('\n')
-    );
+    .setDescription(lines.join('\n'));
 }
 
 function createResearchEmbed(state) {
-  const research = state.research ?? state.researches ?? state.technologies ?? null;
-  const details = research !== null
-    ? summarizeCollection(research)
-    : 'Le détail des recherches débloquées n’est pas encore transmis.';
+  const research = state.research && typeof state.research === 'object' ? state.research : null;
+  const currentResearchId = Number(research?.currentResearchId ?? -1);
+  const progress = Array.isArray(research?.progress) ? research.progress : [];
+
+  const lines = [
+    `🧪 **Sciences débloquées :** ${state.sciences ?? 'Non disponible'}`,
+    `📚 **Recherche en cours :** ${currentResearchId >= 0 ? `Technologie #${currentResearchId}` : 'Aucune'}`
+  ];
+
+  if (progress.length > 0) {
+    lines.push('', '### 📈 Progression scientifique');
+    for (const item of progress) {
+      const type = Number(item.type ?? item.Type ?? 0);
+      const current = Number(item.current ?? item.Current ?? 0);
+      const required = Number(item.required ?? item.Required ?? 0);
+      const active = Number(item.activeResearchers ?? item.ActiveResearchers ?? 0);
+      const percent = required > 0 ? Math.max(0, Math.min(100, current / required * 100)) : 0;
+      const typeName = ACOLONY_RESEARCH_TYPES[type] || `Science ${type}`;
+      lines.push(`• **${typeName}** : ${formatFrenchNumber(current)}/${formatFrenchNumber(required)} (${Math.round(percent)} %) • 👨‍🔬 ${active}`);
+    }
+  }
 
   return buildBaseEmbed('🔬 Recherche', 0x9B59B6, 'AColony • Recherche', state)
-    .setDescription([
-      `🧪 **Sciences :** ${state.sciences ?? 'Non disponible'}`,
-      '',
-      details
-    ].join('\n'));
+    .setDescription(lines.join('\n'));
 }
 
 function createInfrastructureEmbed(state) {
-  const infrastructure =
-    state.infrastructure ??
-    state.buildings ??
-    state.structures ??
-    state.constructions ??
-    null;
+  const infrastructure = Array.isArray(state.infrastructure) ? state.infrastructure : [];
+  const lines = [];
+
+  if (infrastructure.length > 0) {
+    for (const item of infrastructure.slice(0, 35)) {
+      lines.push(`• **${translateBuildingName(item.name ?? item.Name)}** : ${formatFrenchNumber(item.count ?? item.Count ?? 0)}`);
+    }
+  }
 
   return buildBaseEmbed('🧱 Infrastructure', 0x95A5A6, 'AColony • Infrastructure', state)
-    .setDescription(
-      infrastructure !== null
-        ? summarizeCollection(infrastructure)
-        : '⚠️ Le détail des bâtiments et structures n’est pas encore transmis par le Bridge.'
-    );
+    .setDescription(lines.length ? lines.join('\n') : 'Aucune infrastructure détectée.');
 }
 
 function createAnimalsEmbed(state) {
-  const animals = state.animals ?? state.tamedAnimals ?? state.creatures ?? null;
+  const animals = state.animals && typeof state.animals === 'object' ? state.animals : null;
+  const species = Array.isArray(animals?.species) ? animals.species : [];
+  const lines = [
+    `🐾 **Animaux détectés :** ${formatFrenchNumber(animals?.total ?? 0)}`,
+    `🏡 **Apprivoisés / colonie :** ${formatFrenchNumber(animals?.tamed ?? 0)}`,
+    `🌲 **Sauvages :** ${formatFrenchNumber(animals?.wild ?? 0)}`
+  ];
+
+  if (species.length > 0) {
+    lines.push('', '### 🐾 Détail');
+    for (const item of species.slice(0, 25)) {
+      lines.push(`• **${item.name ?? item.Name ?? 'Animal'}** : ${formatFrenchNumber(item.count ?? item.Count ?? 0)}`);
+    }
+  }
+
   return buildBaseEmbed('🐾 Animaux', 0x2ECC71, 'AColony • Animaux', state)
-    .setDescription(
-      animals !== null
-        ? summarizeCollection(animals)
-        : '⚠️ Le détail des animaux n’est pas encore transmis par le Bridge.'
-    );
+    .setDescription(lines.join('\n'));
 }
 
 function createWorldEmbed(state) {
-  const weather = state.weather ?? state.worldData ?? state.environment ?? null;
+  const weather = state.weather && typeof state.weather === 'object' ? state.weather : null;
+  const currentWeatherId = Number(weather?.currentWeatherId ?? -1);
+  const nextWeatherId = Number(weather?.nextWeatherId ?? -1);
+
+  const lines = [
+    `🌍 **Monde :** ${state.world || 'Inconnu'}`,
+    `🗺️ **Taille de la carte :** ${state.mapSize ?? 'Non disponible'}`,
+    `⏱️ **Temps de jeu :** ${state.playTime || 'Non disponible'}`,
+    `📅 **Sauvegarde :** ${state.saveDate || 'Non disponible'}`,
+    `🎮 **Version :** ${state.version || 'Inconnue'}`
+  ];
+
+  if (weather) {
+    lines.push(
+      '',
+      '### 🌦️ Météo',
+      `**Actuelle :** ${ACOLONY_WEATHER_NAMES[currentWeatherId] || `Météo #${currentWeatherId}`}`,
+      `**Prochaine :** ${ACOLONY_WEATHER_NAMES[nextWeatherId] || `Météo #${nextWeatherId}`}`,
+      `📆 **Année :** ${weather.year ?? '?'}`,
+      `🕒 **Heure :** ${formatDayTime(weather.dayTime)}`,
+      `🌧️ **Il pleut :** ${weather.isRaining ? 'Oui' : 'Non'}`,
+      `🌙 **Période :** ${weather.isNight ? 'Nuit' : 'Jour'}`
+    );
+  }
 
   return buildBaseEmbed('🌦️ Monde', 0x3498DB, 'AColony • Monde', state)
-    .setDescription([
-      `🌍 **Monde :** ${state.world || 'Inconnu'}`,
-      `🗺️ **Taille :** ${state.mapSize ?? 'Non disponible'}`,
-      `⏱️ **Temps de jeu :** ${state.playTime || 'Non disponible'}`,
-      `📅 **Sauvegarde :** ${state.saveDate || 'Non disponible'}`,
-      `🎮 **Version :** ${state.version || 'Inconnue'}`,
-      '',
-      weather !== null
-        ? summarizeCollection(weather)
-        : '🌤️ Les données météo/environnement détaillées ne sont pas encore transmises.'
-    ].join('\n'));
+    .setDescription(lines.join('\n'));
 }
 
 function createStatisticsEmbed(state) {
@@ -1169,10 +1434,9 @@ function createStatisticsEmbed(state) {
   for (const colonist of colonists) {
     const health = number(colonist.health);
     const maxHealth = number(colonist.maxHealth);
-    const healthPercent =
-      typeof colonist.healthPercent === 'number'
-        ? colonist.healthPercent
-        : (maxHealth > 0 ? (health / maxHealth) * 100 : null);
+    const healthPercent = typeof colonist.healthPercent === 'number'
+      ? colonist.healthPercent
+      : (maxHealth > 0 ? (health / maxHealth) * 100 : null);
 
     if (typeof healthPercent === 'number') healthValues.push(healthPercent);
     if (typeof colonist.mood === 'number') moodValues.push(colonist.mood);
@@ -1189,6 +1453,7 @@ function createStatisticsEmbed(state) {
   const avgMood = average(moodValues);
   const avgFood = average(foodValues);
   const avgSleep = average(sleepValues);
+  const stats = normalizeGameStats(state.gameStats);
 
   return buildBaseEmbed('📊 Statistiques', 0x5865F2, 'AColony • Statistiques', state)
     .setDescription([
@@ -1203,24 +1468,50 @@ function createStatisticsEmbed(state) {
       `☠️ **Empoisonnements :** ${poisonings}`,
       `🧠 **Crises mentales :** ${breakdowns}`,
       '',
+      '### 🏗️ Activité de la colonie',
+      `🌲 **Arbres coupés :** ${formatFrenchNumber(stats.treesCut)}`,
+      `⛏️ **Blocs minés :** ${formatFrenchNumber(stats.blocksMined)}`,
+      `🌱 **Plantes semées :** ${formatFrenchNumber(stats.plantsSeeded)}`,
+      `🌾 **Plantes récoltées :** ${formatFrenchNumber(stats.plantsHarvested)}`,
+      `🧱 **Constructions :** ${formatFrenchNumber(stats.buildingsBuilt)}`,
+      `🏹 **Animaux éliminés :** ${formatFrenchNumber(stats.animalsKilled)}`,
+      `🥩 **Animaux dépecés :** ${formatFrenchNumber(stats.animalsButchered)}`,
+      '',
       `🔬 **Sciences :** ${state.sciences ?? 'Non disponible'}`,
       `⏱️ **Temps de jeu :** ${state.playTime || 'Non disponible'}`
     ].join('\n'));
 }
 
 function createChallengesEmbed(state) {
-  const challenges = state.challenges ?? null;
-  return buildBaseEmbed('🎯 Défis AColony', 0xED4245, 'AColony • Défis', state)
-    .setDescription(
-      challenges !== null
-        ? summarizeCollection(challenges)
-        : [
-            '✅ Ta sauvegarde est connectée au système de suivi.',
-            '',
-            'Aucun défi AColony automatique n’est encore envoyé par le Bridge.',
-            'Le salon est prêt : les futurs défis pourront utiliser directement les données de ta sauvegarde.'
-          ].join('\n')
+  const challenges = state.challenges;
+
+  if (!challenges || !Array.isArray(challenges.entries)) {
+    return buildBaseEmbed('🎯 Défis AColony', 0xED4245, 'AColony • Défis', state)
+      .setDescription('⏳ Les statistiques de la sauvegarde ne sont pas encore disponibles pour générer les défis.');
+  }
+
+  const difficultyNames = { easy: '🟢 Facile', medium: '🟠 Moyen', hard: '🔴 Difficile' };
+  const lines = [
+    '### 🎯 Défis du jour',
+    'Les progrès sont calculés automatiquement à partir de ta sauvegarde.',
+    ''
+  ];
+
+  for (const entry of challenges.entries) {
+    const current = Math.max(0, (challenges.current?.[entry.metric] || 0) - (challenges.baseline?.[entry.metric] || 0));
+    const progress = Math.min(current, entry.target);
+    const done = Boolean(entry.completed);
+    lines.push(
+      `${done ? '✅' : '⬜'} **${difficultyNames[entry.difficulty] || entry.difficulty} — ${entry.title}**`,
+      `${entry.action} **${entry.target} ${entry.unit}** • ${formatFrenchNumber(progress)}/${formatFrenchNumber(entry.target)} • **+${entry.points} pt${entry.points > 1 ? 's' : ''}**`,
+      ''
     );
+  }
+
+  lines.push(`🏆 **Points AColony cumulés : ${formatFrenchNumber(challenges.totalPoints || 0)}**`);
+
+  return buildBaseEmbed('🎯 Défis AColony', 0xED4245, 'AColony • Défis', state)
+    .setDescription(lines.join('\n'));
 }
 
 function createJournalEmbed(state) {
@@ -1484,8 +1775,11 @@ async function handleUpdate(request, response) {
     infrastructure: body.infrastructure ?? body.buildings ?? body.structures ?? body.constructions ?? null,
     animals: body.animals ?? body.tamedAnimals ?? body.creatures ?? null,
     weather: body.weather ?? body.worldData ?? body.environment ?? null,
-    challenges: body.challenges ?? null
+    gameStats: body.gameStats ?? body.statistics ?? null,
+    challenges: null
   };
+
+  state.challenges = updateDailyChallenges(member.id, state.gameStats);
 
   playerStates.set(member.id, state);
 
