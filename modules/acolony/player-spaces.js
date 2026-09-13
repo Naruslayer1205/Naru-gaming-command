@@ -8,6 +8,10 @@ const {
 // ACOLONY — PLAYER SPACES
 // ============================================================
 
+// ============================================================
+// CONFIGURATION
+// ============================================================
+
 const ACOLONY_ROLE_ID =
   '1548387660517609572';
 
@@ -15,224 +19,398 @@ const CATEGORY_PREFIX =
   '🏭 AColony — ';
 
 // ============================================================
-// NOM DE LA CATÉGORIE
+// SALONS PERSONNELS
 // ============================================================
 
-function getCategoryName(member) {
-  return `${CATEGORY_PREFIX}${member.displayName}`;
+const PLAYER_CHANNELS = [
+  '🏠・colonie',
+  '👥・colons',
+  '📦・stockage',
+  '🏭・production',
+  '🔬・recherche',
+  '🧱・infrastructure',
+  '🐾・animaux',
+  '🌦️・monde',
+  '📊・statistiques',
+  '🎯・défis',
+  '📜・journal',
+  '⚙️・commandes',
+  '🔗・connexion',
+  '🆘・aide'
+];
+
+// ============================================================
+// OUTILS
+// ============================================================
+
+function isUsableMember(
+  member
+) {
+  return Boolean(
+    member &&
+    member.user &&
+    !member.user.bot
+  );
+}
+
+function hasAColonyRole(
+  member
+) {
+  if (
+    !member
+  ) {
+    return false;
+  }
+
+  return member.roles.cache.has(
+    ACOLONY_ROLE_ID
+  );
 }
 
 // ============================================================
-// TROUVER LA CATÉGORIE DU JOUEUR
+// NOM DE LA CATÉGORIE
+// ============================================================
+
+function getPlayerCategoryName(
+  member
+) {
+  return (
+    CATEGORY_PREFIX +
+    member.displayName
+  );
+}
+
+// ============================================================
+// TROUVER LA CATÉGORIE PERSONNELLE
 // ============================================================
 
 function findPlayerCategory(
   guild,
-  userId
+  member
 ) {
-  return guild.channels.cache.find(
-    channel => {
-      if (
-        channel.type !==
-        ChannelType.GuildCategory
-      ) {
-        return false;
-      }
+  if (
+    !guild ||
+    !member
+  ) {
+    return null;
+  }
 
-      if (
-        !channel.name.startsWith(
+  return (
+    guild.channels.cache.find(
+      channel =>
+        channel.type ===
+          ChannelType.GuildCategory &&
+
+        channel.name.startsWith(
           CATEGORY_PREFIX
+        ) &&
+
+        channel.permissionOverwrites.cache.has(
+          member.id
         )
-      ) {
-        return false;
-      }
-
-      const permission =
-        channel.permissionOverwrites.cache.get(
-          userId
-        );
-
-      return Boolean(
-        permission
-      );
-    }
+    ) ||
+    null
   );
 }
 
 // ============================================================
-// TROUVER UN SALON
+// PERMISSIONS CATÉGORIE
 // ============================================================
 
-function findChannel(
-  guild,
-  categoryId,
-  name
+function getCategoryPermissions(
+  member
 ) {
-  return guild.channels.cache.find(
-    channel =>
-      channel.parentId ===
-        categoryId &&
-      channel.name ===
-        name
-  );
+  const botId =
+    member.guild.members.me?.id;
+
+  const permissions = [
+    {
+      id:
+        member.guild.roles.everyone.id,
+
+      deny: [
+        PermissionFlagsBits.ViewChannel
+      ]
+    },
+
+    {
+      id:
+        member.id,
+
+      allow: [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.ReadMessageHistory
+      ]
+    }
+  ];
+
+  if (
+    botId
+  ) {
+    permissions.push(
+      {
+        id:
+          botId,
+
+        allow: [
+          PermissionFlagsBits.ViewChannel,
+          PermissionFlagsBits.ManageChannels,
+          PermissionFlagsBits.ManageMessages,
+          PermissionFlagsBits.SendMessages,
+          PermissionFlagsBits.ReadMessageHistory
+        ]
+      }
+    );
+  }
+
+  return permissions;
+}
+
+// ============================================================
+// PERMISSIONS SALONS
+// ============================================================
+
+function getChannelPermissions(
+  member
+) {
+  const botId =
+    member.guild.members.me?.id;
+
+  const permissions = [
+    {
+      id:
+        member.guild.roles.everyone.id,
+
+      deny: [
+        PermissionFlagsBits.ViewChannel
+      ]
+    },
+
+    {
+      id:
+        member.id,
+
+      allow: [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.ReadMessageHistory,
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.UseApplicationCommands
+      ]
+    }
+  ];
+
+  if (
+    botId
+  ) {
+    permissions.push(
+      {
+        id:
+          botId,
+
+        allow: [
+          PermissionFlagsBits.ViewChannel,
+          PermissionFlagsBits.SendMessages,
+          PermissionFlagsBits.ManageChannels,
+          PermissionFlagsBits.ManageMessages,
+          PermissionFlagsBits.ReadMessageHistory
+        ]
+      }
+    );
+  }
+
+  return permissions;
 }
 
 // ============================================================
 // MESSAGE D'AIDE
 // ============================================================
 
-async function sendHelpMessage(
-  channel,
+function getHelpMessage(
   member
 ) {
-  try {
-    const message = [
-      `👋 Bienvenue ${member} dans ton espace AColony personnel.`,
-      '',
-      'Cet espace est privé et te permet de retrouver toutes les informations envoyées par **Naru Gaming Command** depuis ton jeu AColony.',
-      '',
-      'Voici à quoi correspondent les différents salons :',
-      '',
-      '👤 **・colonie**',
-      'Les informations générales concernant ta colonie : progression, niveau, état général et autres données récupérables.',
-      '',
-      '🏭 **・production**',
-      'Les informations concernant tes productions, bâtiments, chaînes de fabrication et rendement de ta colonie.',
-      '',
-      '📦 **・stockage**',
-      'Les informations concernant les ressources, objets et stocks disponibles dans ta colonie.',
-      '',
-      '👥 **・colons**',
-      'Les informations concernant tes colons : nombre, état, activités et autres données récupérables.',
-      '',
-      '📊 **・statistiques**',
-      'Tes différentes statistiques AColony récupérées automatiquement par le Bridge.',
-      '',
-      '🎯 **・défis**',
-      'Tes futurs défis AColony quotidiens et leur progression suivie automatiquement par le Bridge.',
-      '',
-      '🧩 **・mods**',
-      'Les mods détectés comme actifs pour ta partie AColony et les informations disponibles à leur sujet.',
-      '',
-      '📜 **・journal**',
-      'Ton journal AColony. Il pourra afficher certains événements importants détectés pendant ta partie.',
-      '',
-      '⚙️ **・commandes**',
-      'Le statut de ton Naru AColony Bridge, les synchronisations et les futures commandes disponibles.',
-      '',
-      '🆘 **・aide**',
-      'Ce salon est prévu si tu rencontres un problème avec ton espace AColony, le Bridge, tes données ou si tu as besoin de l’aide d’un membre du staff.',
-      '',
-      'Tu peux simplement expliquer ton problème ici et un membre du staff pourra venir t’aider.',
-      '',
-      '⚠️ Pense à laisser **Naru AColony Bridge Client** ouvert sur ton PC lorsque tu joues afin que tes informations puissent être synchronisées.',
-      '',
-      '🏭 **Naru Gaming Command — AColony Game Bridge**'
-    ].join('\n');
-
-    await channel.send(
-      message
-    );
-
-    console.log(
-      `📨 Message d'aide AColony initial envoyé pour ${member.user.tag}`
-    );
-
-  } catch (error) {
-    console.error(
-      `❌ Impossible d'envoyer le message d'aide AColony pour ${member.user.tag} :`,
-      error
-    );
-  }
+  return [
+    `# 🏭 Espace AColony de ${member.displayName}`,
+    '',
+    'Bienvenue dans ton espace personnel **AColony**.',
+    '',
+    'Les informations de ta partie seront automatiquement regroupées ici par **Naru Gaming Command — AColony Bridge**.',
+    '',
+    '## 📂 Salons',
+    '',
+    '🏠 **colonie**',
+    'Informations générales sur ta colonie, ta sauvegarde et ta progression.',
+    '',
+    '👥 **colons**',
+    'État de tes colons : santé, humeur, faim, sommeil, compétences et autres informations.',
+    '',
+    '📦 **stockage**',
+    'Résumé des ressources et objets présents dans les stockages de ta colonie.',
+    '',
+    '🏭 **production**',
+    'Suivi des productions, crafts et objectifs de stock.',
+    '',
+    '🔬 **recherche**',
+    'Technologies débloquées, progression scientifique et recherche actuelle.',
+    '',
+    '🧱 **infrastructure**',
+    'Informations sur les bâtiments et équipements de ta colonie.',
+    '',
+    '🐾 **animaux**',
+    'Informations sur les animaux détectés et ceux liés à ta colonie.',
+    '',
+    '🌦️ **monde**',
+    'Jour, heure, météo et événements concernant ton monde.',
+    '',
+    '📊 **statistiques**',
+    'Tes statistiques de jeu et la progression globale de ta partie.',
+    '',
+    '🎯 **défis**',
+    'Défis AColony proposés par Naru Gaming Command.',
+    '',
+    '📜 **journal**',
+    'Événements importants détectés entre tes sauvegardes.',
+    '',
+    '⚙️ **commandes**',
+    'Commandes et outils du Bridge AColony.',
+    '',
+    '🔗 **connexion**',
+    'État de connexion entre ton jeu, le client AColony et Discord.',
+    '',
+    '🆘 **aide**',
+    'Aide et informations concernant ton espace personnel.',
+    '',
+    '> 🔒 Cet espace est privé et visible uniquement par toi et le bot.'
+  ].join(
+    '\n'
+  );
 }
 
 // ============================================================
-// CRÉER L'ESPACE ACOLONY
+// CRÉATION D'UN SALON
+// ============================================================
+
+async function createPlayerChannel(
+  member,
+  category,
+  channelName
+) {
+  const existing =
+    member.guild.channels.cache.find(
+      channel =>
+        channel.parentId ===
+          category.id &&
+
+        channel.name ===
+          channelName
+    );
+
+  if (
+    existing
+  ) {
+    return existing;
+  }
+
+  console.log(
+    `🏭 AColony : création ${channelName} pour ${member.user.tag}`
+  );
+
+  const channel =
+    await member.guild.channels.create(
+      {
+        name:
+          channelName,
+
+        type:
+          ChannelType.GuildText,
+
+        parent:
+          category.id,
+
+        permissionOverwrites:
+          getChannelPermissions(
+            member
+          ),
+
+        reason:
+          `Naru Gaming Command — Player Space AColony de ${member.user.tag}`
+      }
+    );
+
+  return channel;
+}
+
+// ============================================================
+// CRÉATION PLAYER SPACE
 // ============================================================
 
 async function createAColonyPlayerSpace(
   member
 ) {
-  const guild =
-    member.guild;
-
   if (
-    member.user.bot
-  ) {
-    return null;
-  }
-
-  if (
-    !member.roles.cache.has(
-      ACOLONY_ROLE_ID
+    !isUsableMember(
+      member
     )
   ) {
     return null;
   }
 
-  // ==========================================================
-  // CATÉGORIE
-  // ==========================================================
+  if (
+    !hasAColonyRole(
+      member
+    )
+  ) {
+    return null;
+  }
+
+  const guild =
+    member.guild;
 
   let category =
     findPlayerCategory(
       guild,
-      member.id
+      member
     );
 
-  if (!category) {
-    category =
-      await guild.channels.create({
-        name:
-          getCategoryName(
-            member
-          ),
+  // ==========================================================
+  // CRÉATION CATÉGORIE
+  // ==========================================================
 
-        type:
-          ChannelType.GuildCategory,
-
-        permissionOverwrites: [
-          {
-            id:
-              guild.roles.everyone.id,
-
-            deny: [
-              PermissionFlagsBits.ViewChannel
-            ]
-          },
-
-          {
-            id:
-              member.id,
-
-            allow: [
-              PermissionFlagsBits.ViewChannel,
-              PermissionFlagsBits.ReadMessageHistory
-            ]
-          },
-
-          {
-            id:
-              guild.members.me.id,
-
-            allow: [
-              PermissionFlagsBits.ViewChannel,
-              PermissionFlagsBits.ManageChannels,
-              PermissionFlagsBits.ManageMessages,
-              PermissionFlagsBits.SendMessages,
-              PermissionFlagsBits.ReadMessageHistory
-            ]
-          }
-        ]
-      });
-
+  if (
+    !category
+  ) {
     console.log(
-      `🏭 Catégorie AColony créée pour ${member.user.tag}`
+      `🏭 Création espace AColony pour ${member.user.tag}...`
     );
+
+    category =
+      await guild.channels.create(
+        {
+          name:
+            getPlayerCategoryName(
+              member
+            ),
+
+          type:
+            ChannelType.GuildCategory,
+
+          permissionOverwrites:
+            getCategoryPermissions(
+              member
+            ),
+
+          reason:
+            `Naru Gaming Command — Player Space AColony de ${member.user.tag}`
+        }
+      );
 
   } else {
+
+    // ========================================================
+    // MISE À JOUR DU NOM
+    // ========================================================
+
     const expectedName =
-      getCategoryName(
+      getPlayerCategoryName(
         member
       );
 
@@ -240,115 +418,105 @@ async function createAColonyPlayerSpace(
       category.name !==
       expectedName
     ) {
-      await category.setName(
-        expectedName
+      try {
+        await category.setName(
+          expectedName,
+          `Naru Gaming Command — mise à jour du nom AColony`
+        );
+
+      } catch (
+        error
+      ) {
+        console.warn(
+          `⚠️ AColony : impossible de renommer la catégorie de ${member.user.tag} :`,
+          error.message
+        );
+      }
+    }
+  }
+
+  // ==========================================================
+  // CRÉATION DES SALONS
+  // ==========================================================
+
+  const createdChannels =
+    {};
+
+  for (
+    const channelName
+    of PLAYER_CHANNELS
+  ) {
+    try {
+      const channel =
+        await createPlayerChannel(
+          member,
+          category,
+          channelName
+        );
+
+      createdChannels[
+        channelName
+      ] =
+        channel;
+
+    } catch (
+      error
+    ) {
+      console.error(
+        `❌ AColony : impossible de créer ${channelName} pour ${member.user.tag} :`,
+        error
       );
     }
   }
 
   // ==========================================================
-  // SALONS
+  // MESSAGE D'AIDE
   // ==========================================================
 
-  const channels = [
-    '👤・colonie',
-    '🏭・production',
-    '📦・stockage',
-    '👥・colons',
-    '📊・statistiques',
-    '🎯・défis',
-    '🧩・mods',
-    '📜・journal',
-    '⚙️・commandes',
-    '🆘・aide'
-  ];
-
-  const createdChannels = {};
-
-  for (
-    const channelName
-    of channels
-  ) {
-    let channel =
-      findChannel(
-        guild,
-        category.id,
-        channelName
-      );
-
-    let channelWasCreated =
-      false;
-
-    if (!channel) {
-      channel =
-        await guild.channels.create({
-          name:
-            channelName,
-
-          type:
-            ChannelType.GuildText,
-
-          parent:
-            category.id,
-
-          permissionOverwrites: [
-            {
-              id:
-                guild.roles.everyone.id,
-
-              deny: [
-                PermissionFlagsBits.ViewChannel
-              ]
-            },
-
-            {
-              id:
-                member.id,
-
-              allow: [
-                PermissionFlagsBits.ViewChannel,
-                PermissionFlagsBits.ReadMessageHistory,
-                PermissionFlagsBits.SendMessages
-              ]
-            },
-
-            {
-              id:
-                guild.members.me.id,
-
-              allow: [
-                PermissionFlagsBits.ViewChannel,
-                PermissionFlagsBits.SendMessages,
-                PermissionFlagsBits.ManageMessages,
-                PermissionFlagsBits.ReadMessageHistory
-              ]
-            }
-          ]
-        });
-
-      channelWasCreated =
-        true;
-
-      console.log(
-        `✅ Salon ${channelName} créé pour ${member.user.tag}`
-      );
-    }
-
+  const helpChannel =
     createdChannels[
-      channelName
-    ] = channel;
+      '🆘・aide'
+    ];
 
-    // Message envoyé uniquement
-    // lors de la création du salon aide.
+  if (
+    helpChannel
+  ) {
+    try {
+      const messages =
+        await helpChannel.messages.fetch(
+          {
+            limit:
+              10
+          }
+        );
 
-    if (
-      channelName ===
-        '🆘・aide' &&
-      channelWasCreated
+      const existingHelp =
+        messages.find(
+          message =>
+            message.author.id ===
+              member.guild.members.me?.id &&
+
+            message.content.includes(
+              'Espace AColony'
+            )
+        );
+
+      if (
+        !existingHelp
+      ) {
+        await helpChannel.send(
+          getHelpMessage(
+            member
+          )
+        );
+      }
+
+    } catch (
+      error
     ) {
-      await sendHelpMessage(
-        channel,
-        member
+      console.warn(
+        `⚠️ AColony : message d'aide impossible pour ${member.user.tag} :`,
+        error.message
       );
     }
   }
@@ -357,275 +525,92 @@ async function createAColonyPlayerSpace(
     `✅ Espace AColony prêt pour ${member.user.tag}`
   );
 
-  return {
-    category,
-    channels:
-      createdChannels
-  };
+  return category;
 }
 
 // ============================================================
-// SUPPRIMER L'ESPACE ACOLONY
+// SUPPRESSION PLAYER SPACE
 // ============================================================
 
 async function deleteAColonyPlayerSpace(
   member
 ) {
-  const guild =
-    member.guild;
-
-  const category =
-    findPlayerCategory(
-      guild,
-      member.id
-    );
-
-  if (!category) {
-    console.log(
-      `ℹ️ Aucun espace AColony trouvé pour ${member.user.tag}`
-    );
-
+  if (
+    !member ||
+    !member.guild
+  ) {
     return;
   }
 
-  console.log('');
-  console.log(
-    '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
-  );
+  const category =
+    findPlayerCategory(
+      member.guild,
+      member
+    );
+
+  if (
+    !category
+  ) {
+    return;
+  }
 
   console.log(
-    '🗑️ SUPPRESSION ESPACE ACOLONY'
+    `🏭 Suppression espace AColony de ${member.user.tag}...`
   );
 
-  console.log(
-    '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
-  );
+  // ==========================================================
+  // SUPPRESSION DES SALONS
+  // ==========================================================
 
-  console.log(
-    `👤 ${member.user.tag}`
-  );
-
-  const childChannels =
-    guild.channels.cache.filter(
+  const children =
+    Array.from(
+      member.guild.channels.cache.values()
+    ).filter(
       channel =>
         channel.parentId ===
-        category.id
+          category.id
     );
 
   for (
     const channel
-    of childChannels.values()
+    of children
   ) {
     try {
-      const channelName =
-        channel.name;
-
       await channel.delete(
-        'Rôle AColony retiré'
+        `Naru Gaming Command — rôle AColony retiré à ${member.user.tag}`
       );
 
-      console.log(
-        `🗑️ Salon AColony supprimé : ${channelName}`
-      );
-
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
-        `❌ Impossible de supprimer le salon AColony ${channel.name} :`,
-        error
+        `❌ AColony : impossible de supprimer ${channel.name} :`,
+        error.message
       );
     }
   }
+
+  // ==========================================================
+  // SUPPRESSION CATÉGORIE
+  // ==========================================================
 
   try {
     await category.delete(
-      'Rôle AColony retiré'
+      `Naru Gaming Command — rôle AColony retiré à ${member.user.tag}`
     );
 
     console.log(
-      `🗑️ Catégorie AColony supprimée pour ${member.user.tag}`
+      `✅ Espace AColony supprimé pour ${member.user.tag}`
     );
 
-  } catch (error) {
+  } catch (
+    error
+  ) {
     console.error(
-      '❌ Impossible de supprimer la catégorie AColony :',
+      `❌ AColony : impossible de supprimer la catégorie de ${member.user.tag} :`,
       error
     );
   }
-
-  console.log(
-    `✅ Espace AColony supprimé pour ${member.user.tag}`
-  );
-}
-
-// ============================================================
-// SYNCHRONISER LES MEMBRES EXISTANTS
-// ============================================================
-
-async function syncExistingAColonyMembers(
-  client
-) {
-  for (
-    const guild
-    of client.guilds.cache.values()
-  ) {
-    try {
-      // On utilise uniquement le cache.
-      // Le gestionnaire général récupère déjà
-      // les membres du serveur.
-
-      const members =
-        guild.members.cache.filter(
-          member =>
-            !member.user.bot &&
-            member.roles.cache.has(
-              ACOLONY_ROLE_ID
-            )
-        );
-
-      console.log(
-        `🏭 ${members.size} membre(s) AColony détecté(s) dans le cache sur ${guild.name}`
-      );
-
-      for (
-        const member
-        of members.values()
-      ) {
-        await createAColonyPlayerSpace(
-          member
-        );
-      }
-
-    } catch (error) {
-      console.error(
-        `❌ Vérification AColony impossible sur ${guild.name} :`,
-        error
-      );
-    }
-  }
-}
-
-// ============================================================
-// MODULE PRINCIPAL
-// ============================================================
-
-function startAColonyPlayerSpaces(
-  client
-) {
-  console.log(
-    '🏭 AColony Player Spaces : module chargé'
-  );
-
-  // ==========================================================
-  // CHANGEMENTS DE RÔLES
-  // ==========================================================
-
-  client.on(
-    'guildMemberUpdate',
-    async (
-      oldMember,
-      newMember
-    ) => {
-      try {
-        const hadAColonyRole =
-          oldMember.roles.cache.has(
-            ACOLONY_ROLE_ID
-          );
-
-        const hasAColonyRole =
-          newMember.roles.cache.has(
-            ACOLONY_ROLE_ID
-          );
-
-        // RÔLE AJOUTÉ
-
-        if (
-          !hadAColonyRole &&
-          hasAColonyRole
-        ) {
-          console.log('');
-          console.log(
-            '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
-          );
-
-          console.log(
-            '🏭 RÔLE ACOLONY ATTRIBUÉ'
-          );
-
-          console.log(
-            '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
-          );
-
-          console.log(
-            `👤 ${newMember.user.tag}`
-          );
-
-          await createAColonyPlayerSpace(
-            newMember
-          );
-        }
-
-        // RÔLE RETIRÉ
-
-        if (
-          hadAColonyRole &&
-          !hasAColonyRole
-        ) {
-          console.log('');
-          console.log(
-            '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
-          );
-
-          console.log(
-            '⚠️ RÔLE ACOLONY RETIRÉ'
-          );
-
-          console.log(
-            '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
-          );
-
-          console.log(
-            `👤 ${newMember.user.tag}`
-          );
-
-          await deleteAColonyPlayerSpace(
-            newMember
-          );
-        }
-
-      } catch (error) {
-        console.error(
-          '❌ Erreur AColony Player Spaces :',
-          error
-        );
-      }
-    }
-  );
-
-  // ==========================================================
-  // SYNCHRONISATION AU DÉMARRAGE
-  // ==========================================================
-
-  syncExistingAColonyMembers(
-    client
-  );
-
-  setTimeout(
-    () => {
-      syncExistingAColonyMembers(
-        client
-      );
-    },
-    5000
-  );
-
-  setTimeout(
-    () => {
-      syncExistingAColonyMembers(
-        client
-      );
-    },
-    15000
-  );
 }
 
 // ============================================================
@@ -633,8 +618,11 @@ function startAColonyPlayerSpaces(
 // ============================================================
 
 module.exports = {
-  startAColonyPlayerSpaces,
   createAColonyPlayerSpace,
   deleteAColonyPlayerSpace,
-  findPlayerCategory
+  findPlayerCategory,
+
+  ACOLONY_ROLE_ID,
+  CATEGORY_PREFIX,
+  PLAYER_CHANNELS
 };
