@@ -206,7 +206,7 @@ function normalizeGameStats(stats) {
   const source = stats && typeof stats === 'object' ? stats : {};
   const keys = [
     'animalsKilled', 'animalsButchered', 'treesCut', 'blocksMined',
-    'plantsSeeded', 'plantsHarvested', 'buildingsBuilt'
+    'plantsSeeded', 'plantsHarvested', 'buildingsBuilt', 'structuresCurrent'
   ];
   const result = {};
   for (const key of keys) result[key] = Math.max(0, Number(source[key]) || 0);
@@ -248,8 +248,16 @@ function updateDailyChallenges(userId, gameStats) {
     user.acolonyChallenges = {
       date: dateKey,
       baseline: current,
-      entries: buildDailyChallengeEntries(String(userId), dateKey)
+      entries: buildDailyChallengeEntries(String(userId), dateKey),
+      trackingVersion: 2
     };
+  }
+
+  // Une seule remise à zéro lors du passage au nouveau suivi afin d'éviter
+  // que les anciennes valeurs incorrectes valident un défi artificiellement.
+  if (user.acolonyChallenges.trackingVersion !== 2) {
+    user.acolonyChallenges.baseline = current;
+    user.acolonyChallenges.trackingVersion = 2;
   }
 
   if (!Number.isFinite(Number(user.acolonyChallengePoints))) {
@@ -260,7 +268,16 @@ function updateDailyChallenges(userId, gameStats) {
   let changed = false;
 
   for (const entry of user.acolonyChallenges.entries) {
-    const progress = Math.max(0, (current[entry.metric] || 0) - (baseline[entry.metric] || 0));
+    let progress = Math.max(0, (current[entry.metric] || 0) - (baseline[entry.metric] || 0));
+
+    if (entry.metric === 'buildingsBuilt') {
+      const structureDelta = Math.max(
+        0,
+        (current.structuresCurrent || 0) - (baseline.structuresCurrent || 0)
+      );
+      progress = Math.max(progress, structureDelta);
+    }
+
     if (!entry.completed && progress >= entry.target) {
       entry.completed = true;
       entry.completedAt = new Date().toISOString();
@@ -1522,7 +1539,8 @@ function createStatisticsEmbed(state) {
       `⛏️ **Blocs minés :** ${formatFrenchNumber(stats.blocksMined)}`,
       `🌱 **Plantes semées :** ${formatFrenchNumber(stats.plantsSeeded)}`,
       `🌾 **Plantes récoltées :** ${formatFrenchNumber(stats.plantsHarvested)}`,
-      `🧱 **Constructions :** ${formatFrenchNumber(stats.buildingsBuilt)}`,
+      `🧱 **Constructions réalisées :** ${formatFrenchNumber(stats.buildingsBuilt)}`,
+      `🏗️ **Structures présentes :** ${formatFrenchNumber(stats.structuresCurrent)}`,
       `🏹 **Animaux éliminés :** ${formatFrenchNumber(stats.animalsKilled)}`,
       `🥩 **Animaux dépecés :** ${formatFrenchNumber(stats.animalsButchered)}`,
       '',
@@ -1547,7 +1565,14 @@ function createChallengesEmbed(state) {
   ];
 
   for (const entry of challenges.entries) {
-    const current = Math.max(0, (challenges.current?.[entry.metric] || 0) - (challenges.baseline?.[entry.metric] || 0));
+    let current = Math.max(0, (challenges.current?.[entry.metric] || 0) - (challenges.baseline?.[entry.metric] || 0));
+    if (entry.metric === 'buildingsBuilt') {
+      const structureDelta = Math.max(
+        0,
+        (challenges.current?.structuresCurrent || 0) - (challenges.baseline?.structuresCurrent || 0)
+      );
+      current = Math.max(current, structureDelta);
+    }
     const progress = Math.min(current, entry.target);
     const done = Boolean(entry.completed);
     lines.push(
