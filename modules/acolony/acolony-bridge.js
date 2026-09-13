@@ -15,8 +15,20 @@ const CATEGORY_PREFIX = '🏭 AColony — ';
 const ACOLONY_DOWNLOAD_URL = process.env.ACOLONY_DOWNLOAD_URL || null;
 
 const CHANNEL_NAMES = {
+  colony: '🏠・colonie',
   colonists: '👥・colons',
-  connection: '🔗・connexion'
+  storage: '📦・stockage',
+  production: '🏭・production',
+  research: '🔬・recherche',
+  infrastructure: '🧱・infrastructure',
+  animals: '🐾・animaux',
+  world: '🌦️・monde',
+  statistics: '📊・statistiques',
+  challenges: '🎯・défis',
+  journal: '📜・journal',
+  commands: '⚙️・commandes',
+  connection: '🔗・connexion',
+  help: '🆘・aide'
 };
 
 const BUTTON_GENERATE_CODE = 'acolony_generate_link_code';
@@ -828,6 +840,373 @@ async function updateColonistsChannel(channel, state) {
   }
 }
 
+
+function truncate(text, max = 3900) {
+  const value = String(text ?? '');
+  return value.length > max ? `${value.slice(0, max - 1)}…` : value;
+}
+
+function formatValue(value) {
+  if (value === null || value === undefined) return 'Non disponible';
+  if (typeof value === 'boolean') return value ? 'Oui' : 'Non';
+  if (typeof value === 'number') return Number.isInteger(value) ? String(value) : value.toFixed(2);
+  if (typeof value === 'string') return value || '—';
+  return truncate(JSON.stringify(value, null, 2), 1000);
+}
+
+function summarizeCollection(value, emptyText = 'Aucune donnée transmise par le Bridge.') {
+  if (value === null || value === undefined) return emptyText;
+
+  if (Array.isArray(value)) {
+    if (value.length === 0) return 'Aucun élément.';
+    return truncate(
+      value.slice(0, 25).map((item, index) => {
+        if (item === null || item === undefined) return `• Élément ${index + 1}`;
+        if (typeof item === 'string' || typeof item === 'number') return `• ${item}`;
+        const name =
+          item.name ??
+          item.label ??
+          item.title ??
+          item.type ??
+          item.id ??
+          `Élément ${index + 1}`;
+        const amount =
+          item.amount ??
+          item.count ??
+          item.quantity ??
+          item.value ??
+          item.level ??
+          null;
+        return amount !== null ? `• **${name}** : ${amount}` : `• **${name}**`;
+      }).join('\n')
+    );
+  }
+
+  if (typeof value === 'object') {
+    const entries = Object.entries(value);
+    if (entries.length === 0) return 'Aucune donnée.';
+    return truncate(
+      entries.slice(0, 25).map(([key, val]) => {
+        if (val && typeof val === 'object') {
+          if (Array.isArray(val)) return `• **${key}** : ${val.length} élément(s)`;
+          return `• **${key}** : données disponibles`;
+        }
+        return `• **${key}** : ${formatValue(val)}`;
+      }).join('\n')
+    );
+  }
+
+  return String(value);
+}
+
+async function findManagedMessage(channel, footerText) {
+  try {
+    const messages = await channel.messages.fetch({ limit: 100 });
+    return messages.find(
+      message =>
+        message.author.id === channel.client.user.id &&
+        message.embeds?.[0]?.footer?.text === footerText
+    ) || null;
+  } catch {
+    return null;
+  }
+}
+
+async function upsertManagedEmbed(channel, footerText, embed) {
+  const oldMessage = await findManagedMessage(channel, footerText);
+  if (oldMessage) {
+    await oldMessage.edit({ content: null, embeds: [embed], components: [] });
+    return oldMessage;
+  }
+  return channel.send({ embeds: [embed] });
+}
+
+function average(values) {
+  const valid = values.filter(value => typeof value === 'number' && Number.isFinite(value));
+  if (valid.length === 0) return null;
+  return valid.reduce((sum, value) => sum + value, 0) / valid.length;
+}
+
+function buildBaseEmbed(title, color, footerText, state) {
+  const embed = new EmbedBuilder()
+    .setTitle(title)
+    .setColor(color)
+    .setFooter({ text: footerText })
+    .setTimestamp();
+
+  if (state?.colonyName || state?.world) {
+    embed.setAuthor({
+      name: `${state.colonyName || 'Colonie'}${state.world ? ` • ${state.world}` : ''}`
+    });
+  }
+
+  return embed;
+}
+
+function createColonyEmbed(state) {
+  return buildBaseEmbed('🏠 Vue générale de la colonie', 0x57F287, 'AColony • Colonie', state)
+    .setDescription([
+      `🏠 **Colonie :** ${state.colonyName || 'Inconnue'}`,
+      `🌍 **Monde :** ${state.world || 'Inconnu'}`,
+      `👥 **Colons :** ${state.colonists.length}`,
+      `🔬 **Sciences :** ${state.sciences ?? 'Non disponible'}`,
+      `🗺️ **Taille de la carte :** ${state.mapSize ?? 'Non disponible'}`,
+      `⏱️ **Temps de jeu :** ${state.playTime || 'Non disponible'}`,
+      `💾 **Sauvegarde :** ${state.saveName || 'Inconnue'}`,
+      `🎮 **Version :** ${state.version || 'Inconnue'}`,
+      `📅 **Date de sauvegarde :** ${state.saveDate || 'Non disponible'}`,
+      '',
+      '🟢 **Synchronisation automatique active**'
+    ].join('\n'));
+}
+
+function createStorageEmbed(state) {
+  const storage = state.storage ?? state.storages ?? state.inventory ?? state.resources ?? null;
+  return buildBaseEmbed('📦 Stockage', 0xFEE75C, 'AColony • Stockage', state)
+    .setDescription(
+      storage !== null
+        ? summarizeCollection(storage)
+        : [
+            'La sauvegarde est bien synchronisée.',
+            '',
+            '⚠️ La version actuelle du Bridge ne transmet pas encore le détail des ressources stockées.',
+            'Ce salon se mettra automatiquement à jour dès que ces données seront envoyées.'
+          ].join('\n')
+    );
+}
+
+function createProductionEmbed(state) {
+  const production = state.production ?? state.productions ?? state.machines ?? null;
+  return buildBaseEmbed('🏭 Production', 0xE67E22, 'AColony • Production', state)
+    .setDescription(
+      production !== null
+        ? summarizeCollection(production)
+        : [
+            'La sauvegarde est bien synchronisée.',
+            '',
+            '⚠️ Le détail des machines, files de production et rendements n’est pas encore transmis par le Bridge.'
+          ].join('\n')
+    );
+}
+
+function createResearchEmbed(state) {
+  const research = state.research ?? state.researches ?? state.technologies ?? null;
+  const details = research !== null
+    ? summarizeCollection(research)
+    : 'Le détail des recherches débloquées n’est pas encore transmis.';
+
+  return buildBaseEmbed('🔬 Recherche', 0x9B59B6, 'AColony • Recherche', state)
+    .setDescription([
+      `🧪 **Sciences :** ${state.sciences ?? 'Non disponible'}`,
+      '',
+      details
+    ].join('\n'));
+}
+
+function createInfrastructureEmbed(state) {
+  const infrastructure =
+    state.infrastructure ??
+    state.buildings ??
+    state.structures ??
+    state.constructions ??
+    null;
+
+  return buildBaseEmbed('🧱 Infrastructure', 0x95A5A6, 'AColony • Infrastructure', state)
+    .setDescription(
+      infrastructure !== null
+        ? summarizeCollection(infrastructure)
+        : '⚠️ Le détail des bâtiments et structures n’est pas encore transmis par le Bridge.'
+    );
+}
+
+function createAnimalsEmbed(state) {
+  const animals = state.animals ?? state.tamedAnimals ?? state.creatures ?? null;
+  return buildBaseEmbed('🐾 Animaux', 0x2ECC71, 'AColony • Animaux', state)
+    .setDescription(
+      animals !== null
+        ? summarizeCollection(animals)
+        : '⚠️ Le détail des animaux n’est pas encore transmis par le Bridge.'
+    );
+}
+
+function createWorldEmbed(state) {
+  const weather = state.weather ?? state.worldData ?? state.environment ?? null;
+
+  return buildBaseEmbed('🌦️ Monde', 0x3498DB, 'AColony • Monde', state)
+    .setDescription([
+      `🌍 **Monde :** ${state.world || 'Inconnu'}`,
+      `🗺️ **Taille :** ${state.mapSize ?? 'Non disponible'}`,
+      `⏱️ **Temps de jeu :** ${state.playTime || 'Non disponible'}`,
+      `📅 **Sauvegarde :** ${state.saveDate || 'Non disponible'}`,
+      `🎮 **Version :** ${state.version || 'Inconnue'}`,
+      '',
+      weather !== null
+        ? summarizeCollection(weather)
+        : '🌤️ Les données météo/environnement détaillées ne sont pas encore transmises.'
+    ].join('\n'));
+}
+
+function createStatisticsEmbed(state) {
+  const colonists = state.colonists;
+  const healthValues = [];
+  const moodValues = [];
+  const foodValues = [];
+  const sleepValues = [];
+
+  let injuries = 0;
+  let diseases = 0;
+  let poisonings = 0;
+  let breakdowns = 0;
+
+  for (const colonist of colonists) {
+    const health = number(colonist.health);
+    const maxHealth = number(colonist.maxHealth);
+    const healthPercent =
+      typeof colonist.healthPercent === 'number'
+        ? colonist.healthPercent
+        : (maxHealth > 0 ? (health / maxHealth) * 100 : null);
+
+    if (typeof healthPercent === 'number') healthValues.push(healthPercent);
+    if (typeof colonist.mood === 'number') moodValues.push(colonist.mood);
+    if (typeof colonist.foodPercent === 'number') foodValues.push(colonist.foodPercent);
+    if (typeof colonist.sleepPercent === 'number') sleepValues.push(colonist.sleepPercent);
+
+    injuries += number(colonist.injuries);
+    diseases += number(colonist.diseases);
+    poisonings += number(colonist.poisonings);
+    if (colonist.breakdown === true) breakdowns++;
+  }
+
+  const avgHealth = average(healthValues);
+  const avgMood = average(moodValues);
+  const avgFood = average(foodValues);
+  const avgSleep = average(sleepValues);
+
+  return buildBaseEmbed('📊 Statistiques', 0x5865F2, 'AColony • Statistiques', state)
+    .setDescription([
+      `👥 **Population :** ${colonists.length}`,
+      `❤️ **Santé moyenne :** ${avgHealth === null ? '?' : `${Math.round(avgHealth)}%`}`,
+      `🙂 **Humeur moyenne :** ${avgMood === null ? '?' : Math.round(avgMood * 10) / 10}`,
+      `🍖 **Nourriture moyenne :** ${avgFood === null ? '?' : `${Math.round(avgFood)}%`}`,
+      `😴 **Sommeil moyen :** ${avgSleep === null ? '?' : `${Math.round(avgSleep)}%`}`,
+      '',
+      `🩸 **Blessures :** ${injuries}`,
+      `🦠 **Maladies :** ${diseases}`,
+      `☠️ **Empoisonnements :** ${poisonings}`,
+      `🧠 **Crises mentales :** ${breakdowns}`,
+      '',
+      `🔬 **Sciences :** ${state.sciences ?? 'Non disponible'}`,
+      `⏱️ **Temps de jeu :** ${state.playTime || 'Non disponible'}`
+    ].join('\n'));
+}
+
+function createChallengesEmbed(state) {
+  const challenges = state.challenges ?? null;
+  return buildBaseEmbed('🎯 Défis AColony', 0xED4245, 'AColony • Défis', state)
+    .setDescription(
+      challenges !== null
+        ? summarizeCollection(challenges)
+        : [
+            '✅ Ta sauvegarde est connectée au système de suivi.',
+            '',
+            'Aucun défi AColony automatique n’est encore envoyé par le Bridge.',
+            'Le salon est prêt : les futurs défis pourront utiliser directement les données de ta sauvegarde.'
+          ].join('\n')
+    );
+}
+
+function createJournalEmbed(state) {
+  const timestamp = Math.floor(new Date(state.receivedAt).getTime() / 1000);
+  return buildBaseEmbed('📜 Journal de synchronisation', 0x2F3136, 'AColony • Journal', state)
+    .setDescription([
+      `🟢 **Dernière synchronisation :** <t:${timestamp}:F> (<t:${timestamp}:R>)`,
+      `💾 **Sauvegarde :** ${state.saveName || 'Inconnue'}`,
+      `🏠 **Colonie :** ${state.colonyName || 'Inconnue'}`,
+      `🌍 **Monde :** ${state.world || 'Inconnu'}`,
+      `👥 **Colons détectés :** ${state.colonists.length}`,
+      `🔬 **Sciences :** ${state.sciences ?? 'Non disponible'}`,
+      '',
+      'Le Bridge surveille automatiquement les sauvegardes AColony.'
+    ].join('\n'));
+}
+
+function createCommandsEmbed(state) {
+  return buildBaseEmbed('⚙️ Commandes & fonctionnement', 0x5865F2, 'AColony • Commandes', state)
+    .setDescription([
+      '### 🤖 Fonctionnement automatique',
+      '• Lance **AColony**.',
+      '• Le Bridge détecte le jeu et lit la dernière sauvegarde.',
+      '• Les salons de ton espace personnel sont actualisés automatiquement.',
+      '',
+      '### 🔄 Pour forcer une nouvelle synchronisation',
+      'Effectue une nouvelle sauvegarde dans AColony.',
+      '',
+      '### 🔗 Liaison',
+      'La gestion de la connexion se fait dans **🔗・connexion**.',
+      '',
+      '### 🟢 État actuel',
+      `Dernière sauvegarde reçue : **${state.saveName || 'Inconnue'}**`
+    ].join('\n'));
+}
+
+function createHelpEmbed(state) {
+  return buildBaseEmbed('🆘 Aide AColony Bridge', 0x5865F2, 'AColony • Aide', state)
+    .setDescription([
+      '### Rien ne se met à jour ?',
+      '1. Vérifie que **Naru AColony Bridge** tourne sur ton PC.',
+      '2. Lance AColony et charge ta partie.',
+      '3. Effectue une sauvegarde.',
+      '4. Attends quelques secondes.',
+      '',
+      '### La connexion est perdue ?',
+      'Consulte **🔗・connexion**.',
+      '',
+      '### État détecté actuellement',
+      `🏠 Colonie : **${state.colonyName || 'Inconnue'}**`,
+      `🌍 Monde : **${state.world || 'Inconnu'}**`,
+      `👥 Colons : **${state.colonists.length}**`,
+      `💾 Save : **${state.saveName || 'Inconnue'}**`
+    ].join('\n'));
+}
+
+async function updateAllAColonyChannels(guild, category, state) {
+  const jobs = [
+    [CHANNEL_NAMES.colony, 'AColony • Colonie', createColonyEmbed(state)],
+    [CHANNEL_NAMES.storage, 'AColony • Stockage', createStorageEmbed(state)],
+    [CHANNEL_NAMES.production, 'AColony • Production', createProductionEmbed(state)],
+    [CHANNEL_NAMES.research, 'AColony • Recherche', createResearchEmbed(state)],
+    [CHANNEL_NAMES.infrastructure, 'AColony • Infrastructure', createInfrastructureEmbed(state)],
+    [CHANNEL_NAMES.animals, 'AColony • Animaux', createAnimalsEmbed(state)],
+    [CHANNEL_NAMES.world, 'AColony • Monde', createWorldEmbed(state)],
+    [CHANNEL_NAMES.statistics, 'AColony • Statistiques', createStatisticsEmbed(state)],
+    [CHANNEL_NAMES.challenges, 'AColony • Défis', createChallengesEmbed(state)],
+    [CHANNEL_NAMES.journal, 'AColony • Journal', createJournalEmbed(state)],
+    [CHANNEL_NAMES.commands, 'AColony • Commandes', createCommandsEmbed(state)],
+    [CHANNEL_NAMES.help, 'AColony • Aide', createHelpEmbed(state)]
+  ];
+
+  const results = [];
+
+  for (const [channelName, footer, embed] of jobs) {
+    const channel = findChannel(guild, category, channelName);
+
+    if (!channel) {
+      results.push({ channel: channelName, ok: false, reason: 'introuvable' });
+      continue;
+    }
+
+    try {
+      await upsertManagedEmbed(channel, footer, embed);
+      results.push({ channel: channelName, ok: true });
+    } catch (error) {
+      console.error(`❌ AColony : mise à jour ${channelName} :`, error.message);
+      results.push({ channel: channelName, ok: false, reason: error.message });
+    }
+  }
+
+  return results;
+}
+
 async function handleLink(request, response) {
   let body;
 
@@ -990,7 +1369,14 @@ async function handleUpdate(request, response) {
     playTime: body.playTime || null,
     sciences: body.sciences ?? null,
     mapSize: body.mapSize ?? null,
-    colonists: body.colonists
+    colonists: body.colonists,
+    storage: body.storage ?? body.storages ?? body.inventory ?? body.resources ?? null,
+    production: body.production ?? body.productions ?? body.machines ?? null,
+    research: body.research ?? body.researches ?? body.technologies ?? null,
+    infrastructure: body.infrastructure ?? body.buildings ?? body.structures ?? body.constructions ?? null,
+    animals: body.animals ?? body.tamedAnimals ?? body.creatures ?? null,
+    weather: body.weather ?? body.worldData ?? body.environment ?? null,
+    challenges: body.challenges ?? null
   };
 
   playerStates.set(member.id, state);
@@ -1000,6 +1386,7 @@ async function handleUpdate(request, response) {
   }
 
   await updateColonistsChannel(colonistsChannel, state);
+  const channelResults = await updateAllAColonyChannels(guild, category, state);
 
   const data = loadData();
 
@@ -1017,12 +1404,14 @@ async function handleUpdate(request, response) {
   console.log(`🌍 Monde : ${state.world || '?'}`);
   console.log(`👥 Colons : ${state.colonists.length}`);
   console.log(`💾 Save : ${state.saveName || '?'}`);
+  console.log(`📡 Salons : ${channelResults.filter(result => result.ok).length}/${channelResults.length + 1} mis à jour`);
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
   return sendJson(response, 200, {
     ok: true,
     message: 'Données AColony reçues',
-    colonists: state.colonists.length
+    colonists: state.colonists.length,
+    channelsUpdated: channelResults.filter(result => result.ok).length + 1
   });
 }
 
