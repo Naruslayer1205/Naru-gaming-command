@@ -960,89 +960,128 @@ function createColonyEmbed(state) {
     ].join('\n'));
 }
 
+function formatCountItems(items, limit = 25) {
+  if (!Array.isArray(items) || items.length === 0) return 'Aucun élément détecté.';
+  return truncate(
+    items.slice(0, limit).map(item => {
+      const name = item?.name || item?.label || (item?.id ? `Objet #${item.id}` : 'Élément');
+      const count = item?.count ?? item?.amount ?? item?.quantity ?? 0;
+      return `• **${name}** : ${Number.isInteger(Number(count)) ? Number(count) : Number(count).toFixed(2)}`;
+    }).join('\n')
+  );
+}
+
 function createStorageEmbed(state) {
-  const storage = state.storage ?? state.storages ?? state.inventory ?? state.resources ?? null;
+  const storage = Array.isArray(state.storage) ? state.storage : [];
+  const totalUnits = storage.reduce((sum, item) => sum + number(item?.count), 0);
+
   return buildBaseEmbed('📦 Stockage', 0xFEE75C, 'AColony • Stockage', state)
-    .setDescription(
-      storage !== null
-        ? summarizeCollection(storage)
-        : [
-            'La sauvegarde est bien synchronisée.',
-            '',
-            '⚠️ La version actuelle du Bridge ne transmet pas encore le détail des ressources stockées.',
-            'Ce salon se mettra automatiquement à jour dès que ces données seront envoyées.'
-          ].join('\n')
-    );
+    .setDescription([
+      `📦 **Types de ressources :** ${storage.length}`,
+      `🧮 **Unités détectées :** ${Math.round(totalUnits * 100) / 100}`,
+      '',
+      storage.length > 0
+        ? formatCountItems(storage, 30)
+        : 'Aucune ressource stockée détectée dans la sauvegarde.'
+    ].join('\n'));
 }
 
 function createProductionEmbed(state) {
-  const production = state.production ?? state.productions ?? state.machines ?? null;
+  const production = state.production || {};
+  const machines = Array.isArray(production.machines) ? production.machines : [];
+
   return buildBaseEmbed('🏭 Production', 0xE67E22, 'AColony • Production', state)
-    .setDescription(
-      production !== null
-        ? summarizeCollection(production)
-        : [
-            'La sauvegarde est bien synchronisée.',
-            '',
-            '⚠️ Le détail des machines, files de production et rendements n’est pas encore transmis par le Bridge.'
-          ].join('\n')
-    );
+    .setDescription([
+      `⚙️ **Installations de production détectées :** ${production.totalMachines ?? machines.reduce((s, x) => s + number(x?.count), 0)}`,
+      '',
+      machines.length > 0
+        ? formatCountItems(machines, 30)
+        : 'Aucune installation de production spécifique détectée.'
+    ].join('\n'));
 }
 
 function createResearchEmbed(state) {
-  const research = state.research ?? state.researches ?? state.technologies ?? null;
-  const details = research !== null
-    ? summarizeCollection(research)
-    : 'Le détail des recherches débloquées n’est pas encore transmis.';
+  const research = state.research || {};
+  const progress = Array.isArray(research.progress) ? research.progress : [];
+
+  const lines = progress.map(entry => {
+    const current = number(entry.current);
+    const required = number(entry.required);
+    const percent = required > 0 ? Math.min(100, Math.round((current / required) * 100)) : 0;
+    return `• **Branche ${entry.type ?? '?'}** : ${Math.round(current * 100) / 100}/${Math.round(required * 100) / 100} (${percent}%) • Chercheurs: ${number(entry.activeResearchers)}`;
+  });
 
   return buildBaseEmbed('🔬 Recherche', 0x9B59B6, 'AColony • Recherche', state)
     .setDescription([
-      `🧪 **Sciences :** ${state.sciences ?? 'Non disponible'}`,
+      `🧪 **Sciences débloquées :** ${research.unlockedCount ?? state.sciences ?? 'Non disponible'}`,
+      `🎯 **Recherche actuelle :** ${number(research.currentResearchId, -1) >= 0 ? `#${research.currentResearchId}` : 'Aucune'}`,
       '',
-      details
+      lines.length > 0 ? truncate(lines.join('\n')) : 'Aucune progression de recherche active.'
     ].join('\n'));
 }
 
 function createInfrastructureEmbed(state) {
-  const infrastructure =
-    state.infrastructure ??
-    state.buildings ??
-    state.structures ??
-    state.constructions ??
-    null;
+  const infrastructure = Array.isArray(state.infrastructure) ? state.infrastructure : [];
+  const total = infrastructure.reduce((sum, item) => sum + number(item?.count), 0);
 
   return buildBaseEmbed('🧱 Infrastructure', 0x95A5A6, 'AColony • Infrastructure', state)
-    .setDescription(
-      infrastructure !== null
-        ? summarizeCollection(infrastructure)
-        : '⚠️ Le détail des bâtiments et structures n’est pas encore transmis par le Bridge.'
-    );
+    .setDescription([
+      `🏗️ **Éléments construits détectés :** ${Math.round(total)}`,
+      `🧩 **Types de structures :** ${infrastructure.length}`,
+      '',
+      infrastructure.length > 0
+        ? formatCountItems(infrastructure, 35)
+        : 'Aucune structure détectée.'
+    ].join('\n'));
 }
 
 function createAnimalsEmbed(state) {
-  const animals = state.animals ?? state.tamedAnimals ?? state.creatures ?? null;
+  const animals = state.animals || {};
+  const species = Array.isArray(animals.species) ? animals.species : [];
+
   return buildBaseEmbed('🐾 Animaux', 0x2ECC71, 'AColony • Animaux', state)
-    .setDescription(
-      animals !== null
-        ? summarizeCollection(animals)
-        : '⚠️ Le détail des animaux n’est pas encore transmis par le Bridge.'
-    );
+    .setDescription([
+      `🐾 **Animaux présents :** ${animals.total ?? 0}`,
+      `🏠 **Apprivoisés / appartenant à un groupe :** ${animals.tamed ?? 0}`,
+      `🌲 **Sauvages :** ${animals.wild ?? 0}`,
+      '',
+      species.length > 0
+        ? formatCountItems(species, 25)
+        : 'Aucun animal détecté.'
+    ].join('\n'));
+}
+
+function weatherLabel(id) {
+  const labels = {
+    0: 'Clair',
+    1: 'Variable',
+    2: 'Pluie / mauvais temps',
+    3: 'Orage',
+    4: 'Extrême'
+  };
+  return labels[id] ? `${labels[id]} (#${id})` : `Météo #${id ?? '?'}`;
 }
 
 function createWorldEmbed(state) {
-  const weather = state.weather ?? state.worldData ?? state.environment ?? null;
+  const weather = state.weather || {};
+  const dayTime = typeof weather.dayTime === 'number'
+    ? `${Math.round(weather.dayTime * 100)}% de la journée`
+    : 'Non disponible';
 
   return buildBaseEmbed('🌦️ Monde', 0x3498DB, 'AColony • Monde', state)
     .setDescription([
       `🌍 **Monde :** ${state.world || 'Inconnu'}`,
       `🗺️ **Taille :** ${state.mapSize ?? 'Non disponible'}`,
+      `📆 **Année :** ${weather.year ?? 'Non disponible'}`,
+      `☀️ **Période :** ${weather.isNight ? 'Nuit' : 'Jour'}`,
+      `🕒 **Cycle :** ${dayTime}`,
+      `🌧️ **Pluie :** ${weather.isRaining ? 'Oui' : 'Non'}`,
+      `🌤️ **Météo actuelle :** ${weatherLabel(weather.currentWeatherId)}`,
+      `🔮 **Prochaine météo :** ${weatherLabel(weather.nextWeatherId)}`,
+      '',
       `⏱️ **Temps de jeu :** ${state.playTime || 'Non disponible'}`,
       `📅 **Sauvegarde :** ${state.saveDate || 'Non disponible'}`,
-      `🎮 **Version :** ${state.version || 'Inconnue'}`,
-      '',
-      weather !== null
-        ? summarizeCollection(weather)
-        : '🌤️ Les données météo/environnement détaillées ne sont pas encore transmises.'
+      `🎮 **Version :** ${state.version || 'Inconnue'}`
     ].join('\n'));
 }
 
@@ -1061,10 +1100,9 @@ function createStatisticsEmbed(state) {
   for (const colonist of colonists) {
     const health = number(colonist.health);
     const maxHealth = number(colonist.maxHealth);
-    const healthPercent =
-      typeof colonist.healthPercent === 'number'
-        ? colonist.healthPercent
-        : (maxHealth > 0 ? (health / maxHealth) * 100 : null);
+    const healthPercent = typeof colonist.healthPercent === 'number'
+      ? colonist.healthPercent
+      : (maxHealth > 0 ? (health / maxHealth) * 100 : null);
 
     if (typeof healthPercent === 'number') healthValues.push(healthPercent);
     if (typeof colonist.mood === 'number') moodValues.push(colonist.mood);
@@ -1077,6 +1115,7 @@ function createStatisticsEmbed(state) {
     if (colonist.breakdown === true) breakdowns++;
   }
 
+  const stats = state.gameStats || {};
   const avgHealth = average(healthValues);
   const avgMood = average(moodValues);
   const avgFood = average(foodValues);
@@ -1084,35 +1123,52 @@ function createStatisticsEmbed(state) {
 
   return buildBaseEmbed('📊 Statistiques', 0x5865F2, 'AColony • Statistiques', state)
     .setDescription([
+      '### 👥 Colonie',
       `👥 **Population :** ${colonists.length}`,
       `❤️ **Santé moyenne :** ${avgHealth === null ? '?' : `${Math.round(avgHealth)}%`}`,
       `🙂 **Humeur moyenne :** ${avgMood === null ? '?' : Math.round(avgMood * 10) / 10}`,
       `🍖 **Nourriture moyenne :** ${avgFood === null ? '?' : `${Math.round(avgFood)}%`}`,
       `😴 **Sommeil moyen :** ${avgSleep === null ? '?' : `${Math.round(avgSleep)}%`}`,
+      `🩸 Blessures: **${injuries}** • 🦠 Maladies: **${diseases}** • ☠️ Empoisonnements: **${poisonings}** • 🧠 Crises: **${breakdowns}**`,
       '',
-      `🩸 **Blessures :** ${injuries}`,
-      `🦠 **Maladies :** ${diseases}`,
-      `☠️ **Empoisonnements :** ${poisonings}`,
-      `🧠 **Crises mentales :** ${breakdowns}`,
-      '',
-      `🔬 **Sciences :** ${state.sciences ?? 'Non disponible'}`,
-      `⏱️ **Temps de jeu :** ${state.playTime || 'Non disponible'}`
+      '### 🎮 Activité cumulée',
+      `⛏️ **Blocs minés :** ${stats.blocksMined ?? 0}`,
+      `🌲 **Arbres coupés :** ${stats.treesCut ?? 0}`,
+      `🌱 **Plantes semées :** ${stats.plantsSeeded ?? 0}`,
+      `🌾 **Plantes récoltées :** ${stats.plantsHarvested ?? 0}`,
+      `🏗️ **Constructions :** ${stats.buildingsBuilt ?? 0}`,
+      `🏹 **Animaux tués :** ${stats.animalsKilled ?? 0}`,
+      `🥩 **Animaux dépecés :** ${stats.animalsButchered ?? 0}`
     ].join('\n'));
 }
 
+function nextMilestone(value, step) {
+  const current = Math.max(0, number(value));
+  return Math.max(step, Math.ceil((current + 1) / step) * step);
+}
+
+function challengeLine(label, value, step) {
+  const current = Math.max(0, number(value));
+  const target = nextMilestone(current, step);
+  const previous = Math.max(0, target - step);
+  const progress = Math.max(0, current - previous);
+  return `${label} **${progress}/${step}** → prochain palier total **${target}**`;
+}
+
 function createChallengesEmbed(state) {
-  const challenges = state.challenges ?? null;
+  const stats = state.gameStats || {};
+
   return buildBaseEmbed('🎯 Défis AColony', 0xED4245, 'AColony • Défis', state)
-    .setDescription(
-      challenges !== null
-        ? summarizeCollection(challenges)
-        : [
-            '✅ Ta sauvegarde est connectée au système de suivi.',
-            '',
-            'Aucun défi AColony automatique n’est encore envoyé par le Bridge.',
-            'Le salon est prêt : les futurs défis pourront utiliser directement les données de ta sauvegarde.'
-          ].join('\n')
-    );
+    .setDescription([
+      '### 🎯 Prochains paliers automatiques',
+      challengeLine('⛏️ Minage', stats.blocksMined, 100),
+      challengeLine('🌾 Récolte', stats.plantsHarvested, 100),
+      challengeLine('🏗️ Construction', stats.buildingsBuilt, 50),
+      challengeLine('🌲 Foresterie', stats.treesCut, 100),
+      challengeLine('🏹 Chasse', stats.animalsKilled, 25),
+      '',
+      'Ces objectifs sont calculés automatiquement à partir de ta sauvegarde et évoluent avec ta progression.'
+    ].join('\n'));
 }
 
 function createJournalEmbed(state) {
@@ -1120,11 +1176,14 @@ function createJournalEmbed(state) {
   return buildBaseEmbed('📜 Journal de synchronisation', 0x2F3136, 'AColony • Journal', state)
     .setDescription([
       `🟢 **Dernière synchronisation :** <t:${timestamp}:F> (<t:${timestamp}:R>)`,
+      `🎮 **Joueur :** ${state.playerName || 'Inconnu'}`,
       `💾 **Sauvegarde :** ${state.saveName || 'Inconnue'}`,
       `🏠 **Colonie :** ${state.colonyName || 'Inconnue'}`,
       `🌍 **Monde :** ${state.world || 'Inconnu'}`,
       `👥 **Colons détectés :** ${state.colonists.length}`,
-      `🔬 **Sciences :** ${state.sciences ?? 'Non disponible'}`,
+      `📦 **Types de ressources :** ${Array.isArray(state.storage) ? state.storage.length : 0}`,
+      `🧱 **Types de structures :** ${Array.isArray(state.infrastructure) ? state.infrastructure.length : 0}`,
+      `🐾 **Animaux :** ${state.animals?.total ?? 0}`,
       '',
       'Le Bridge surveille automatiquement les sauvegardes AColony.'
     ].join('\n'));
@@ -1136,16 +1195,15 @@ function createCommandsEmbed(state) {
       '### 🤖 Fonctionnement automatique',
       '• Lance **AColony**.',
       '• Le Bridge détecte le jeu et lit la dernière sauvegarde.',
-      '• Les salons de ton espace personnel sont actualisés automatiquement.',
+      '• Les salons sont actualisés automatiquement.',
       '',
-      '### 🔄 Pour forcer une nouvelle synchronisation',
-      'Effectue une nouvelle sauvegarde dans AColony.',
+      '### 🔄 Forcer une synchronisation',
+      'Effectue simplement une nouvelle sauvegarde dans AColony.',
       '',
-      '### 🔗 Liaison',
-      'La gestion de la connexion se fait dans **🔗・connexion**.',
+      '### 📡 Données suivies',
+      'Colonie • colons • stockage • production • recherche • infrastructure • animaux • monde • statistiques • défis.',
       '',
-      '### 🟢 État actuel',
-      `Dernière sauvegarde reçue : **${state.saveName || 'Inconnue'}**`
+      `🟢 **Dernière save :** ${state.saveName || 'Inconnue'}`
     ].join('\n'));
 }
 
@@ -1158,10 +1216,11 @@ function createHelpEmbed(state) {
       '3. Effectue une sauvegarde.',
       '4. Attends quelques secondes.',
       '',
-      '### La connexion est perdue ?',
-      'Consulte **🔗・connexion**.',
+      '### Connexion / changement de PC',
+      'Utilise **🔗・connexion** pour gérer la liaison.',
       '',
-      '### État détecté actuellement',
+      '### État actuel',
+      `🎮 Joueur : **${state.playerName || 'Inconnu'}**`,
       `🏠 Colonie : **${state.colonyName || 'Inconnue'}**`,
       `🌍 Monde : **${state.world || 'Inconnu'}**`,
       `👥 Colons : **${state.colonists.length}**`,
@@ -1361,6 +1420,7 @@ async function handleUpdate(request, response) {
     discordUserId: member.id,
     installationId: auth.user.installationId,
     receivedAt: new Date().toISOString(),
+    playerName: body.playerName || null,
     saveName: body.saveName || null,
     colonyName: body.colonyName || null,
     world: body.world || null,
@@ -1376,6 +1436,7 @@ async function handleUpdate(request, response) {
     infrastructure: body.infrastructure ?? body.buildings ?? body.structures ?? body.constructions ?? null,
     animals: body.animals ?? body.tamedAnimals ?? body.creatures ?? null,
     weather: body.weather ?? body.worldData ?? body.environment ?? null,
+    gameStats: body.gameStats ?? body.statistics ?? null,
     challenges: body.challenges ?? null
   };
 
