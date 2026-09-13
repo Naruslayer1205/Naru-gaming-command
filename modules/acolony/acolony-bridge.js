@@ -1,6 +1,9 @@
 const {
   EmbedBuilder,
-  ChannelType
+  ChannelType,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle
 } = require('discord.js');
 
 const crypto = require('crypto');
@@ -20,6 +23,20 @@ const ACOLONY_ROLE_ID =
 const CATEGORY_PREFIX =
   '🏭 AColony — ';
 
+// ============================================================
+// LIEN DE TÉLÉCHARGEMENT
+// ============================================================
+//
+// Quand ton GitHub sera prêt, ajoute sur Bot-Hosting :
+//
+// ACOLONY_DOWNLOAD_URL=https://github.com/.../releases/latest
+//
+// ============================================================
+
+const ACOLONY_DOWNLOAD_URL =
+  process.env.ACOLONY_DOWNLOAD_URL ||
+  null;
+
 const CHANNEL_NAMES = {
   colonists:
     '👥・colons',
@@ -27,6 +44,13 @@ const CHANNEL_NAMES = {
   connection:
     '🔗・connexion'
 };
+
+// ============================================================
+// BOUTONS
+// ============================================================
+
+const BUTTON_GENERATE_CODE =
+  'acolony_generate_link_code';
 
 // ============================================================
 // FICHIERS
@@ -53,6 +77,9 @@ let discordClient =
 
 let scanInterval =
   null;
+
+let interactionListenerStarted =
+  false;
 
 const playerStates =
   new Map();
@@ -147,7 +174,7 @@ function saveData(
 }
 
 // ============================================================
-// OUTILS CRYPTO
+// CRYPTO
 // ============================================================
 
 function randomBlock(
@@ -231,8 +258,10 @@ function ensureUserData(
       discordUserId:
         userId,
 
+      // IMPORTANT :
+      // aucun code généré automatiquement
       linkCode:
-        generateLinkCode(),
+        null,
 
       linked:
         false,
@@ -247,6 +276,9 @@ function ensureUserData(
         null,
 
       lastSeenAt:
+        null,
+
+      linkCodeCreatedAt:
         null,
 
       linkCodeConsumedAt:
@@ -266,25 +298,8 @@ function ensureUserData(
       userId
     ];
 
-  // ==========================================================
-  // IMPORTANT
-  //
-  // On ne génère un code QUE si le compte
-  // n'est pas encore lié.
-  //
-  // Une fois lié, linkCode reste null.
-  // ==========================================================
-
-  if (
-    !user.linked &&
-    !user.linkCode
-  ) {
-    user.linkCode =
-      generateLinkCode();
-
-    changed =
-      true;
-  }
+  // Anciennes installations déjà liées :
+  // on supprime automatiquement leur ancien code.
 
   if (
     user.linked &&
@@ -322,6 +337,89 @@ function ensureUserData(
 }
 
 // ============================================================
+// GÉNÉRER UN CODE SUR DEMANDE
+// ============================================================
+
+function createUserLinkCode(
+  member
+) {
+  const data =
+    loadData();
+
+  const userId =
+    String(
+      member.id
+    );
+
+  let user =
+    data.users[
+      userId
+    ];
+
+  if (
+    !user
+  ) {
+    ensureUserData(
+      member
+    );
+
+    const refreshed =
+      loadData();
+
+    user =
+      refreshed.users[
+        userId
+      ];
+
+    data.users =
+      refreshed.users;
+  }
+
+  if (
+    user.linked
+  ) {
+    return {
+      ok:
+        false,
+
+      reason:
+        'ALREADY_LINKED',
+
+      user
+    };
+  }
+
+  // Chaque clic génère un nouveau code.
+  // L'ancien devient immédiatement invalide.
+
+  user.linkCode =
+    generateLinkCode();
+
+  user.linkCodeCreatedAt =
+    new Date()
+      .toISOString();
+
+  user.linkCodeConsumedAt =
+    null;
+
+  data.users[
+    userId
+  ] =
+    user;
+
+  saveData(
+    data
+  );
+
+  return {
+    ok:
+      true,
+
+    user
+  };
+}
+
+// ============================================================
 // RECHERCHE PAR CODE
 // ============================================================
 
@@ -353,9 +451,6 @@ function findUserByCode(
       data.users
     )
   ) {
-    // Un compte déjà lié ne peut plus
-    // utiliser son ancien code.
-
     if (
       user.linked
     ) {
@@ -769,7 +864,7 @@ function findChannel(
 }
 
 // ============================================================
-// PANNEAU DE LIAISON
+// MESSAGE DE LIAISON
 // ============================================================
 
 async function findLinkMessage(
@@ -799,11 +894,97 @@ async function findLinkMessage(
   }
 }
 
-function getMaskedCode() {
-  return (
-    '••••-••••-••••'
-  );
+// ============================================================
+// BOUTONS DU PANNEAU
+// ============================================================
+
+function buildLinkButtons(
+  user
+) {
+  const row =
+    new ActionRowBuilder();
+
+  // ==========================================================
+  // TÉLÉCHARGEMENT
+  // ==========================================================
+
+  if (
+    ACOLONY_DOWNLOAD_URL
+  ) {
+    row.addComponents(
+      new ButtonBuilder()
+        .setLabel(
+          'Télécharger le Bridge'
+        )
+        .setEmoji(
+          '⬇️'
+        )
+        .setStyle(
+          ButtonStyle.Link
+        )
+        .setURL(
+          ACOLONY_DOWNLOAD_URL
+        )
+    );
+
+  } else {
+    // Tant que GitHub n'est pas configuré,
+    // le bouton reste visible mais désactivé.
+
+    row.addComponents(
+      new ButtonBuilder()
+        .setCustomId(
+          'acolony_download_not_ready'
+        )
+        .setLabel(
+          'Télécharger le Bridge'
+        )
+        .setEmoji(
+          '⬇️'
+        )
+        .setStyle(
+          ButtonStyle.Secondary
+        )
+        .setDisabled(
+          true
+        )
+    );
+  }
+
+  // ==========================================================
+  // GÉNÉRATION CODE
+  // ==========================================================
+
+  if (
+    !user.linked
+  ) {
+    row.addComponents(
+      new ButtonBuilder()
+        .setCustomId(
+          BUTTON_GENERATE_CODE
+        )
+        .setLabel(
+          user.linkCode
+            ? 'Regénérer mon code'
+            : 'Générer mon code'
+        )
+        .setEmoji(
+          '🔑'
+        )
+        .setStyle(
+          ButtonStyle.Primary
+        )
+    );
+  }
+
+  return [
+    row
+  ];
 }
+
+// ============================================================
+// PANNEAU DE LIAISON
+// ============================================================
 
 async function updateLinkPanel(
   member,
@@ -827,99 +1008,146 @@ async function updateLinkPanel(
       member
     );
 
-  let linkSection;
+  let description;
+
+  // ==========================================================
+  // DÉJÀ LIÉ
+  // ==========================================================
 
   if (
     user.linked
   ) {
-    linkSection =
+    description =
       [
+        `Bienvenue <@${member.id}>.`,
+        '',
+        'Ton installation **AColony** est connectée à ton espace personnel Naru Gaming Command.',
+        '',
         '### 🔐 Code de liaison',
-        `\`${getMaskedCode()}\``,
+        '`••••-••••-••••`',
         '',
         '🟢 **Statut : LIÉ**',
         '',
-        '🔒 Le code de liaison a été **désactivé après utilisation**.',
-        'Même une ancienne copie du code ne peut plus être utilisée.'
+        '🔒 Le code utilisé pour effectuer la liaison a été **détruit et désactivé**.',
+        'Une ancienne capture de ce code ne permet plus de connecter une autre installation.',
+        '',
+        `💻 **Installation :** \`${user.installationId || '?'}\``,
+        `🕒 **Dernière connexion :** ${
+          user.lastSeenAt
+            ? `<t:${Math.floor(
+                new Date(
+                  user.lastSeenAt
+                ).getTime() /
+                1000
+              )}:R>`
+            : 'En attente'
+        }`,
+        '',
+        '✅ **La configuration est terminée.**',
+        '',
+        'Lorsque AColony sera lancé, Naru AColony Bridge pourra synchroniser automatiquement les données de ta colonie.',
+        '',
+        '⚠️ En cas de changement de PC ou de réinstallation, une nouvelle liaison devra être créée.'
       ].join(
         '\n'
       );
 
-  } else {
-    linkSection =
+  // ==========================================================
+  // CODE DÉJÀ GÉNÉRÉ
+  // ==========================================================
+
+  } else if (
+    user.linkCode
+  ) {
+    description =
       [
-        '### 🔑 Ton code personnel',
+        `Bienvenue <@${member.id}>.`,
+        '',
+        'Tu as commencé la configuration de **Naru AColony Bridge**.',
+        '',
+        '### 1️⃣ Télécharger le Bridge',
+        'Utilise le bouton **Télécharger le Bridge** ci-dessous et installe-le sur ton PC.',
+        '',
+        '### 2️⃣ Ton code de liaison',
         `\`${user.linkCode}\``,
         '',
-        '🟠 **Statut : EN ATTENTE DE LIAISON**',
+        '🟡 **Statut : CODE GÉNÉRÉ — EN ATTENTE DE LIAISON**',
         '',
-        '1. Installe le **Naru AColony Bridge** sur ton PC.',
-        '2. Lance-le.',
-        '3. Entre le code affiché ci-dessus.',
-        '4. La liaison se fera automatiquement.'
+        '### 3️⃣ Dans Naru AColony Bridge',
+        'Lance le programme puis entre le code affiché ci-dessus.',
+        '',
+        'Dès que la liaison est validée :',
+        '• le code sera immédiatement désactivé ;',
+        '• ton installation sera associée à ton Discord ;',
+        '• le véritable token de connexion sera enregistré automatiquement.',
+        '',
+        '⚠️ **Ne partage pas ce code.**',
+        '',
+        'Si nécessaire, tu peux utiliser **Regénérer mon code**. L’ancien code deviendra immédiatement invalide.'
       ].join(
         '\n'
       );
-  }
 
-  const description =
-    [
-      `Bienvenue <@${member.id}>.`,
-      '',
-      user.linked
-        ? 'Ton installation AColony est liée à ton espace Discord personnel.'
-        : 'Ce code permet de relier **ton installation AColony** à ton espace Discord personnel.',
-      '',
-      linkSection
-    ];
-
-  if (
-    user.linked
-  ) {
-    description.push(
-      '',
-      `💻 **Installation :** \`${user.installationId || '?'}\``,
-      `🕒 **Dernière connexion :** ${
-        user.lastSeenAt
-          ? `<t:${Math.floor(
-              new Date(
-                user.lastSeenAt
-              ).getTime() /
-              1000
-            )}:R>`
-          : 'En attente'
-      }`,
-      '',
-      '⚠️ En cas de changement de PC, une nouvelle liaison devra être générée.'
-    );
+  // ==========================================================
+  // NOUVEAU JOUEUR
+  // ==========================================================
 
   } else {
-    description.push(
-      '',
-      '⚠️ **Ne partage pas ce code.** Il permet de lier une installation à ton compte Discord.'
-    );
+    description =
+      [
+        `Bienvenue <@${member.id}>.`,
+        '',
+        'Ce salon permet de connecter **AColony** à ton espace personnel Naru Gaming Command.',
+        '',
+        '## 📥 Installation',
+        '',
+        '**1.** Clique sur **Télécharger le Bridge**.',
+        '',
+        '**2.** Installe **Naru AColony Bridge** sur ton PC.',
+        '',
+        '**3.** Reviens ici puis clique sur **Générer mon code**.',
+        '',
+        '**4.** Lance Naru AColony Bridge et entre le code personnel qui apparaîtra ici.',
+        '',
+        '**5.** Clique sur **Lier mon Discord** dans l’application.',
+        '',
+        'Une fois la liaison terminée, tu n’auras plus besoin de saisir de code.',
+        '',
+        '⚪ **Statut : NON LIÉ**',
+        '',
+        '🔐 Aucun code de liaison n’a encore été généré.'
+      ].join(
+        '\n'
+      );
   }
 
   const embed =
     new EmbedBuilder()
       .setTitle(
-        '🔗 Liaison AColony'
+        '🔗 Connexion AColony'
       )
       .setColor(
         user.linked
           ? 0x57F287
-          : 0xFEE75C
+          : (
+              user.linkCode
+                ? 0xFEE75C
+                : 0x5865F2
+            )
       )
       .setDescription(
-        description.join(
-          '\n'
-        )
+        description
       )
       .setFooter({
         text:
           'Naru AColony Bridge • Liaison'
       })
       .setTimestamp();
+
+  const components =
+    buildLinkButtons(
+      user
+    );
 
   const oldMessage =
     await findLinkMessage(
@@ -936,7 +1164,9 @@ async function updateLinkPanel(
       embeds:
         [
           embed
-        ]
+        ],
+
+      components
     });
 
   } else {
@@ -944,14 +1174,230 @@ async function updateLinkPanel(
       embeds:
         [
           embed
-        ]
+        ],
+
+      components
     });
   }
 }
 
 // ============================================================
-// SYNCHRO PANNEAUX DE LIAISON
-// CACHE UNIQUEMENT
+// INTERACTION : GÉNÉRER CODE
+// ============================================================
+
+async function handleGenerateCodeButton(
+  interaction
+) {
+  if (
+    !interaction.inGuild()
+  ) {
+    return;
+  }
+
+  const member =
+    interaction.member;
+
+  if (
+    !member
+  ) {
+    return;
+  }
+
+  if (
+    !member.roles.cache.has(
+      ACOLONY_ROLE_ID
+    )
+  ) {
+    await interaction.reply({
+      content:
+        '❌ Tu ne possèdes pas le rôle AColony.',
+
+      ephemeral:
+        true
+    });
+
+    return;
+  }
+
+  const category =
+    findAColonyCategory(
+      interaction.guild,
+      member
+    );
+
+  if (
+    !category
+  ) {
+    await interaction.reply({
+      content:
+        '❌ Ton espace personnel AColony est introuvable.',
+
+      ephemeral:
+        true
+    });
+
+    return;
+  }
+
+  if (
+    interaction.channelId !==
+    findChannel(
+      interaction.guild,
+      category,
+      CHANNEL_NAMES.connection
+    )?.id
+  ) {
+    await interaction.reply({
+      content:
+        '❌ Ce bouton ne peut être utilisé que dans ton espace AColony personnel.',
+
+      ephemeral:
+        true
+    });
+
+    return;
+  }
+
+  const current =
+    ensureUserData(
+      member
+    );
+
+  if (
+    current.linked
+  ) {
+    await interaction.reply({
+      content:
+        '✅ Ton installation AColony est déjà liée.',
+
+      ephemeral:
+        true
+    });
+
+    return;
+  }
+
+  await interaction.deferReply({
+    ephemeral:
+      true
+  });
+
+  const result =
+    createUserLinkCode(
+      member
+    );
+
+  if (
+    !result.ok
+  ) {
+    await interaction.editReply({
+      content:
+        '❌ Impossible de générer le code.'
+    });
+
+    return;
+  }
+
+  await updateLinkPanel(
+    member,
+    category
+  );
+
+  await interaction.editReply({
+    content:
+      [
+        '🔑 **Ton code de liaison a été généré.**',
+        '',
+        `Code : \`${result.user.linkCode}\``,
+        '',
+        'Entre maintenant ce code dans **Naru AColony Bridge**.',
+        '',
+        '⚠️ Ne partage pas ce code.'
+      ].join(
+        '\n'
+      )
+  });
+
+  console.log(
+    `🔑 Code AColony généré pour ${member.user.tag}`
+  );
+}
+
+// ============================================================
+// LISTENER BOUTONS
+// ============================================================
+
+function startInteractionListener(
+  client
+) {
+  if (
+    interactionListenerStarted
+  ) {
+    return;
+  }
+
+  interactionListenerStarted =
+    true;
+
+  client.on(
+    'interactionCreate',
+    async interaction => {
+      try {
+        if (
+          !interaction.isButton()
+        ) {
+          return;
+        }
+
+        if (
+          interaction.customId !==
+          BUTTON_GENERATE_CODE
+        ) {
+          return;
+        }
+
+        await handleGenerateCodeButton(
+          interaction
+        );
+
+      } catch (
+        error
+      ) {
+        console.error(
+          '❌ AColony : erreur bouton liaison :',
+          error
+        );
+
+        try {
+          if (
+            interaction.deferred ||
+            interaction.replied
+          ) {
+            await interaction.editReply({
+              content:
+                '❌ Une erreur est survenue pendant la génération du code.'
+            });
+
+          } else {
+            await interaction.reply({
+              content:
+                '❌ Une erreur est survenue pendant la génération du code.',
+
+              ephemeral:
+                true
+            });
+          }
+
+        } catch {
+          // rien
+        }
+      }
+    }
+  );
+}
+
+// ============================================================
+// SYNCHRO PANNEAUX
 // ============================================================
 
 async function syncLinkPanels() {
@@ -1024,7 +1470,7 @@ async function syncLinkPanels() {
 }
 
 // ============================================================
-// FORMAT
+// OUTILS FORMAT
 // ============================================================
 
 function number(
@@ -1049,11 +1495,9 @@ function formatPercent(
     return '?';
   }
 
-  return (
-    `${Math.round(
-      value
-    )}%`
-  );
+  return `${Math.round(
+    value
+  )}%`;
 }
 
 function healthEmoji(
@@ -1206,9 +1650,7 @@ function buildTraitsText(
           typeof trait ===
           'string'
         ) {
-          return (
-            `• ${trait}`
-          );
+          return `• ${trait}`;
         }
 
         return (
@@ -1281,9 +1723,7 @@ function buildJobsText(
   if (
     important.length === 0
   ) {
-    return (
-      'Aucune spécialisation particulière.'
-    );
+    return 'Aucune spécialisation particulière.';
   }
 
   return important
@@ -1536,7 +1976,7 @@ function createColonistEmbed(
 }
 
 // ============================================================
-// MESSAGES COLONS EXISTANTS
+// MESSAGES COLONS
 // ============================================================
 
 async function getExistingColonistMessages(
@@ -1605,7 +2045,7 @@ async function getExistingColonistMessages(
 }
 
 // ============================================================
-// MAJ SALON COLONS
+// MAJ COLONS
 // ============================================================
 
 async function updateColonistsChannel(
@@ -1863,7 +2303,7 @@ async function handleLink(
     found.user.linkedAt;
 
   // ==========================================================
-  // LE CODE DE LIAISON EST DÉTRUIT
+  // CODE À USAGE UNIQUE : DÉTRUIT
   // ==========================================================
 
   found.user.linkCode =
@@ -1911,7 +2351,7 @@ async function handleLink(
   );
 
   console.log(
-    `🔐 Code AColony consommé pour ${member.user.tag}`
+    `🔐 Code AColony consommé : ${member.user.tag}`
   );
 
   return sendJson(
@@ -2189,27 +2629,35 @@ async function handleUpdate(
   console.log(
     '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
   );
+
   console.log(
     '🏭 DONNÉES ACOLONY REÇUES'
   );
+
   console.log(
     '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
   );
+
   console.log(
     `👤 Discord : ${member.user.tag}`
   );
+
   console.log(
     `🏠 Colonie : ${state.colonyName || '?'}`
   );
+
   console.log(
     `🌍 Monde : ${state.world || '?'}`
   );
+
   console.log(
     `👥 Colons : ${state.colonists.length}`
   );
+
   console.log(
     `💾 Save : ${state.saveName || '?'}`
   );
+
   console.log(
     '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
   );
@@ -2264,10 +2712,6 @@ async function handleAColonyRequest(
     return true;
   }
 
-  // ==========================================================
-  // STATUS PUBLIC
-  // ==========================================================
-
   if (
     request.method ===
       'GET' &&
@@ -2297,10 +2741,6 @@ async function handleAColonyRequest(
     return true;
   }
 
-  // ==========================================================
-  // LIAISON
-  // ==========================================================
-
   if (
     request.method ===
       'POST' &&
@@ -2314,10 +2754,6 @@ async function handleAColonyRequest(
 
     return true;
   }
-
-  // ==========================================================
-  // TÉLÉMÉTRIE / SAVE
-  // ==========================================================
 
   if (
     request.method ===
@@ -2380,9 +2816,26 @@ function startAColonyBridge(
 
   ensureDataFile();
 
+  startInteractionListener(
+    client
+  );
+
   console.log(
     '🏭 AColony Bridge : module chargé'
   );
+
+  if (
+    ACOLONY_DOWNLOAD_URL
+  ) {
+    console.log(
+      `⬇️ AColony téléchargement : ${ACOLONY_DOWNLOAD_URL}`
+    );
+
+  } else {
+    console.log(
+      '⚠️ ACOLONY_DOWNLOAD_URL non configuré — bouton téléchargement désactivé.'
+    );
+  }
 
   setTimeout(
     () => {
