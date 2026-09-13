@@ -12,6 +12,11 @@ const {
   handleAtsEtsBridgeRequest
 } = require('../ATS-ETS/ats-ets-bridge');
 
+const {
+  startAColonyBridge,
+  handleAColonyRequest
+} = require('../acolony/acolony-bridge');
+
 const PORT =
   Number(process.env.SERVER_PORT) ||
   Number(process.env.BRIDGE_PORT) ||
@@ -77,6 +82,28 @@ function startBridgeServer(
     return server;
   }
 
+  // ==========================================================
+  // INITIALISATION ACOLONY
+  // ==========================================================
+
+  try {
+    startAColonyBridge(
+      client
+    );
+
+  } catch (
+    error
+  ) {
+    console.error(
+      '❌ Impossible d’initialiser AColony Bridge :',
+      error
+    );
+  }
+
+  // ==========================================================
+  // SERVEUR HTTP
+  // ==========================================================
+
   server =
     http.createServer(
       async (
@@ -129,6 +156,22 @@ function startBridgeServer(
 
           if (
             truckHandled
+          ) {
+            return;
+          }
+
+          // ==================================================
+          // ACOLONY
+          // ==================================================
+
+          const acolonyHandled =
+            await handleAColonyRequest(
+              request,
+              response
+            );
+
+          if (
+            acolonyHandled
           ) {
             return;
           }
@@ -220,6 +263,10 @@ function startBridgeServer(
 
       console.log(
         '🚛 ATS/ETS2 → /truck/...'
+      );
+
+      console.log(
+        '🏭 AColony  → /acolony/...'
       );
 
       console.log(
