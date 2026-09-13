@@ -3,18 +3,22 @@ const {
   ChannelType
 } = require('discord.js');
 
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+
 // ============================================================
-// NARU GAMING COMMAND — ACOLONY BRIDGE
-// Réception des données AColony + mise à jour Discord
+// NARU GAMING COMMAND
+// ACOLONY BRIDGE
+// Liaison Discord <-> installation PC
 // ============================================================
 
 const ACOLONY_ROLE_ID =
   process.env.ACOLONY_ROLE_ID ||
   '1548387660517609572';
 
-const ACOLONY_BRIDGE_SECRET =
-  process.env.ACOLONY_BRIDGE_SECRET ||
-  '';
+const CATEGORY_PREFIX =
+  '🏭 AColony — ';
 
 const CHANNEL_NAMES = {
   colonists:
@@ -24,47 +28,395 @@ const CHANNEL_NAMES = {
     '🔗・connexion'
 };
 
-// Client Discord fourni par index.js / bridge-server.js
+// ============================================================
+// FICHIERS
+// ============================================================
+
+const DATA_FOLDER =
+  path.join(
+    __dirname,
+    '../../data'
+  );
+
+const DATA_FILE =
+  path.join(
+    DATA_FOLDER,
+    'acolony-links.json'
+  );
+
+// ============================================================
+// ÉTAT
+// ============================================================
+
 let discordClient = null;
 
-// État mémoire
+let scanInterval = null;
+
 const playerStates =
   new Map();
 
 // ============================================================
-// INITIALISATION
+// FICHIER DE DONNÉES
 // ============================================================
 
-function startAColonyBridge(client) {
-  discordClient =
-    client;
+function ensureDataFile() {
+  if (
+    !fs.existsSync(
+      DATA_FOLDER
+    )
+  ) {
+    fs.mkdirSync(
+      DATA_FOLDER,
+      {
+        recursive: true
+      }
+    );
+  }
 
   if (
-    !client.acolonyBridge
+    !fs.existsSync(
+      DATA_FILE
+    )
   ) {
-    client.acolonyBridge = {
-      players:
-        new Map(),
+    fs.writeFileSync(
+      DATA_FILE,
+      JSON.stringify(
+        {
+          users: {}
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+  }
+}
 
-      previousStates:
-        new Map(),
+function loadData() {
+  ensureDataFile();
 
-      messages:
-        new Map()
+  try {
+    const data =
+      JSON.parse(
+        fs.readFileSync(
+          DATA_FILE,
+          'utf8'
+        )
+      );
+
+    if (
+      !data.users ||
+      typeof data.users !==
+        'object'
+    ) {
+      data.users = {};
+    }
+
+    return data;
+
+  } catch (
+    error
+  ) {
+    console.error(
+      '❌ AColony : lecture acolony-links.json impossible :',
+      error
+    );
+
+    return {
+      users: {}
+    };
+  }
+}
+
+function saveData(
+  data
+) {
+  ensureDataFile();
+
+  fs.writeFileSync(
+    DATA_FILE,
+    JSON.stringify(
+      data,
+      null,
+      2
+    ),
+    'utf8'
+  );
+}
+
+// ============================================================
+// OUTILS CRYPTO
+// ============================================================
+
+function randomBlock(
+  length = 4
+) {
+  const chars =
+    'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+  let result =
+    '';
+
+  for (
+    let i = 0;
+    i < length;
+    i++
+  ) {
+    result +=
+      chars[
+        crypto.randomInt(
+          0,
+          chars.length
+        )
+      ];
+  }
+
+  return result;
+}
+
+function generateLinkCode() {
+  return (
+    'ACOL-' +
+    randomBlock(4) +
+    '-' +
+    randomBlock(4)
+  );
+}
+
+function generateToken() {
+  return crypto
+    .randomBytes(32)
+    .toString('hex');
+}
+
+function hashToken(
+  token
+) {
+  return crypto
+    .createHash('sha256')
+    .update(
+      String(token)
+    )
+    .digest('hex');
+}
+
+// ============================================================
+// UTILISATEUR
+// ============================================================
+
+function getUserData(
+  userId
+) {
+  const data =
+    loadData();
+
+  return (
+    data.users[
+      String(userId)
+    ] ||
+    null
+  );
+}
+
+function ensureUserData(
+  member
+) {
+  const data =
+    loadData();
+
+  const userId =
+    String(
+      member.id
+    );
+
+  let changed =
+    false;
+
+  if (
+    !data.users[userId]
+  ) {
+    data.users[userId] = {
+      discordUserId:
+        userId,
+
+      linkCode:
+        generateLinkCode(),
+
+      linked:
+        false,
+
+      installationId:
+        null,
+
+      tokenHash:
+        null,
+
+      linkedAt:
+        null,
+
+      lastSeenAt:
+        null,
+
+      createdAt:
+        new Date()
+          .toISOString()
+    };
+
+    changed =
+      true;
+  }
+
+  if (
+    !data.users[userId]
+      .linkCode
+  ) {
+    data.users[userId]
+      .linkCode =
+        generateLinkCode();
+
+    changed =
+      true;
+  }
+
+  if (
+    changed
+  ) {
+    saveData(
+      data
+    );
+  }
+
+  return data.users[
+    userId
+  ];
+}
+
+// ============================================================
+// RECHERCHE PAR CODE
+// ============================================================
+
+function findUserByCode(
+  code
+) {
+  const normalized =
+    String(
+      code || ''
+    )
+      .trim()
+      .toUpperCase();
+
+  const data =
+    loadData();
+
+  for (
+    const [
+      userId,
+      user
+    ]
+    of Object.entries(
+      data.users
+    )
+  ) {
+    if (
+      String(
+        user.linkCode || ''
+      )
+        .toUpperCase() ===
+      normalized
+    ) {
+      return {
+        data,
+        userId,
+        user
+      };
+    }
+  }
+
+  return null;
+}
+
+// ============================================================
+// AUTHENTIFICATION INSTALLATION
+// ============================================================
+
+function authenticateInstallation(
+  request
+) {
+  const installationId =
+    String(
+      request.headers[
+        'x-acolony-installation-id'
+      ] || ''
+    ).trim();
+
+  const authorization =
+    String(
+      request.headers
+        .authorization || ''
+    );
+
+  const match =
+    /^Bearer\s+(.+)$/i.exec(
+      authorization
+    );
+
+  if (
+    !installationId ||
+    !match
+  ) {
+    return null;
+  }
+
+  const token =
+    match[1].trim();
+
+  const tokenHash =
+    hashToken(
+      token
+    );
+
+  const data =
+    loadData();
+
+  for (
+    const [
+      userId,
+      user
+    ]
+    of Object.entries(
+      data.users
+    )
+  ) {
+    if (
+      !user.linked ||
+      !user.installationId ||
+      !user.tokenHash
+    ) {
+      continue;
+    }
+
+    if (
+      user.installationId !==
+        installationId
+    ) {
+      continue;
+    }
+
+    if (
+      user.tokenHash !==
+        tokenHash
+    ) {
+      continue;
+    }
+
+    return {
+      data,
+      userId,
+      user
     };
   }
 
-  console.log(
-    '🏭 AColony Bridge : module chargé'
-  );
-
-  if (
-    !ACOLONY_BRIDGE_SECRET
-  ) {
-    console.warn(
-      '⚠️ ACOLONY_BRIDGE_SECRET non défini.'
-    );
-  }
+  return null;
 }
 
 // ============================================================
@@ -82,17 +434,31 @@ function sendJson(
     return;
   }
 
+  const payload =
+    JSON.stringify(
+      data
+    );
+
   response.writeHead(
     status,
     {
       'Content-Type':
         'application/json; charset=utf-8',
 
+      'Content-Length':
+        Buffer.byteLength(
+          payload
+        ),
+
       'Access-Control-Allow-Origin':
         '*',
 
       'Access-Control-Allow-Headers':
-        'Content-Type, x-acolony-bridge-secret',
+        [
+          'Content-Type',
+          'Authorization',
+          'X-AColony-Installation-Id'
+        ].join(', '),
 
       'Access-Control-Allow-Methods':
         'GET, POST, OPTIONS'
@@ -100,9 +466,7 @@ function sendJson(
   );
 
   response.end(
-    JSON.stringify(
-      data
-    )
+    payload
   );
 }
 
@@ -117,48 +481,77 @@ function readJsonBody(
       let body =
         '';
 
+      let size =
+        0;
+
+      let finished =
+        false;
+
       request.on(
         'data',
         chunk => {
-          body +=
-            chunk.toString();
+          if (
+            finished
+          ) {
+            return;
+          }
+
+          size +=
+            chunk.length;
 
           if (
-            body.length >
-            5_000_000
+            size >
+            5 * 1024 * 1024
           ) {
+            finished =
+              true;
+
             reject(
               new Error(
                 'Payload trop volumineux'
               )
             );
 
-            request.destroy();
+            return;
           }
+
+          body +=
+            chunk.toString(
+              'utf8'
+            );
         }
       );
 
       request.on(
         'end',
         () => {
+          if (
+            finished
+          ) {
+            return;
+          }
+
+          finished =
+            true;
+
+          if (
+            !body.trim()
+          ) {
+            resolve(
+              {}
+            );
+
+            return;
+          }
+
           try {
-            if (!body) {
-              resolve(
-                {}
-              );
-
-              return;
-            }
-
             resolve(
               JSON.parse(
                 body
               )
             );
 
-          } catch (
-            error
-          ) {
+          } catch {
             reject(
               new Error(
                 'JSON invalide'
@@ -170,42 +563,31 @@ function readJsonBody(
 
       request.on(
         'error',
-        reject
+        error => {
+          if (
+            finished
+          ) {
+            return;
+          }
+
+          finished =
+            true;
+
+          reject(
+            error
+          );
+        }
       );
     }
   );
 }
 
 // ============================================================
-// AUTHENTIFICATION BRIDGE
-// ============================================================
-
-function checkSecret(
-  request
-) {
-  if (
-    !ACOLONY_BRIDGE_SECRET
-  ) {
-    return false;
-  }
-
-  const received =
-    request.headers[
-      'x-acolony-bridge-secret'
-    ];
-
-  return (
-    received ===
-    ACOLONY_BRIDGE_SECRET
-  );
-}
-
-// ============================================================
-// TROUVER LE MEMBRE DISCORD
+// MEMBRE DISCORD
 // ============================================================
 
 async function findDiscordMember(
-  discordUserId
+  userId
 ) {
   if (
     !discordClient
@@ -223,20 +605,20 @@ async function findDiscordMember(
     try {
       const member =
         await guild.members.fetch(
-          discordUserId
+          userId
         );
 
-      if (!member) {
-        continue;
+      if (
+        member
+      ) {
+        return {
+          guild,
+          member
+        };
       }
 
-      return {
-        guild,
-        member
-      };
-
     } catch {
-      // utilisateur absent de ce serveur
+      // absent du serveur
     }
   }
 
@@ -244,7 +626,7 @@ async function findDiscordMember(
 }
 
 // ============================================================
-// TROUVER CATÉGORIE ACOLONY DU JOUEUR
+// CATÉGORIE PERSONNELLE
 // ============================================================
 
 function findAColonyCategory(
@@ -257,15 +639,15 @@ function findAColonyCategory(
         channel.type ===
           ChannelType.GuildCategory &&
         channel.name.startsWith(
-          '🏭 AColony — '
+          CATEGORY_PREFIX
         )
     );
 
-  // D'abord grâce aux permissions personnelles
   const byPermission =
     categories.find(
       category =>
-        category.permissionOverwrites
+        category
+          .permissionOverwrites
           .cache
           .has(
             member.id
@@ -278,7 +660,6 @@ function findAColonyCategory(
     return byPermission;
   }
 
-  // Fallback avec le nom du joueur
   const displayName =
     member.displayName
       .toLowerCase();
@@ -297,7 +678,7 @@ function findAColonyCategory(
 }
 
 // ============================================================
-// TROUVER UN SALON DANS L'ESPACE JOUEUR
+// SALON
 // ============================================================
 
 function findChannel(
@@ -318,7 +699,226 @@ function findChannel(
 }
 
 // ============================================================
-// OUTILS AFFICHAGE
+// PANNEAU DE LIAISON
+// ============================================================
+
+async function findLinkMessage(
+  channel
+) {
+  try {
+    const messages =
+      await channel.messages.fetch({
+        limit: 50
+      });
+
+    return (
+      messages.find(
+        message =>
+          message.author.id ===
+            channel.client.user.id &&
+          message.embeds?.[0]
+            ?.footer
+            ?.text ===
+            'Naru AColony Bridge • Liaison'
+      ) ||
+      null
+    );
+
+  } catch {
+    return null;
+  }
+}
+
+async function updateLinkPanel(
+  member,
+  category
+) {
+  const channel =
+    findChannel(
+      member.guild,
+      category,
+      CHANNEL_NAMES.connection
+    );
+
+  if (
+    !channel
+  ) {
+    return;
+  }
+
+  const user =
+    ensureUserData(
+      member
+    );
+
+  const embed =
+    new EmbedBuilder()
+      .setTitle(
+        '🔗 Liaison AColony'
+      )
+      .setColor(
+        user.linked
+          ? 0x57F287
+          : 0xFEE75C
+      )
+      .setDescription(
+        [
+          `Bienvenue <@${member.id}>.`,
+          '',
+          'Ce code permet de relier **ton installation AColony** à ton espace Discord personnel.',
+          '',
+          '### 🔑 Ton code personnel',
+          `\`${user.linkCode}\``,
+          '',
+          user.linked
+            ? '🟢 **Statut : LIÉ**'
+            : '🟠 **Statut : EN ATTENTE DE LIAISON**',
+          '',
+          user.linked
+            ? (
+                `💻 Installation : \`${user.installationId || '?'}\`\n` +
+                `🕒 Dernière connexion : ${
+                  user.lastSeenAt
+                    ? `<t:${Math.floor(
+                        new Date(
+                          user.lastSeenAt
+                        ).getTime() /
+                        1000
+                      )}:R>`
+                    : 'En attente'
+                }`
+              )
+            : (
+                '1. Installe le **Naru AColony Bridge** sur ton PC.\n' +
+                '2. Lance-le.\n' +
+                '3. Entre le code affiché ci-dessus.\n' +
+                '4. La liaison se fera automatiquement.'
+              ),
+          '',
+          '⚠️ **Ne partage pas ce code.** Il donne accès à la liaison de ton espace AColony.'
+        ].join(
+          '\n'
+        )
+      )
+      .setFooter({
+        text:
+          'Naru AColony Bridge • Liaison'
+      })
+      .setTimestamp();
+
+  const oldMessage =
+    await findLinkMessage(
+      channel
+    );
+
+  if (
+    oldMessage
+  ) {
+    await oldMessage.edit({
+      content:
+        null,
+
+      embeds:
+        [
+          embed
+        ]
+    });
+
+  } else {
+    await channel.send({
+      embeds:
+        [
+          embed
+        ]
+    });
+  }
+}
+
+// ============================================================
+// SYNCHRO PANNEAUX DE LIAISON
+// ============================================================
+
+async function syncLinkPanels() {
+  if (
+    !discordClient
+  ) {
+    return;
+  }
+
+  for (
+    const guild
+    of discordClient
+      .guilds
+      .cache
+      .values()
+  ) {
+    let members;
+
+    try {
+      members =
+        await guild.members.fetch();
+
+    } catch (
+      error
+    ) {
+      console.error(
+        '❌ AColony : récupération membres impossible :',
+        error.message
+      );
+
+      continue;
+    }
+
+    for (
+      const member
+      of members.values()
+    ) {
+      if (
+        member.user.bot
+      ) {
+        continue;
+      }
+
+      if (
+        !member.roles.cache.has(
+          ACOLONY_ROLE_ID
+        )
+      ) {
+        continue;
+      }
+
+      const category =
+        findAColonyCategory(
+          guild,
+          member
+        );
+
+      if (
+        !category
+      ) {
+        continue;
+      }
+
+      try {
+        await updateLinkPanel(
+          member,
+          category
+        );
+
+      } catch (
+        error
+      ) {
+        console.error(
+          `❌ AColony : panneau liaison ${member.user.tag} :`,
+          error.message
+        );
+      }
+    }
+  }
+}
+
+// ============================================================
+// FORMAT
 // ============================================================
 
 function number(
@@ -338,14 +938,16 @@ function formatPercent(
 ) {
   if (
     typeof value !==
-    'number'
+      'number'
   ) {
     return '?';
   }
 
-  return `${Math.round(
-    value
-  )}%`;
+  return (
+    `${Math.round(
+      value
+    )}%`
+  );
 }
 
 function healthEmoji(
@@ -353,7 +955,7 @@ function healthEmoji(
 ) {
   if (
     typeof value !==
-    'number'
+      'number'
   ) {
     return '❔';
   }
@@ -378,7 +980,7 @@ function moodEmoji(
 ) {
   if (
     typeof value !==
-    'number'
+      'number'
   ) {
     return '❔';
   }
@@ -493,16 +1095,23 @@ function buildTraitsText(
 
   return traits
     .map(
-      trait =>
-        `• ${
+      trait => {
+        if (
           typeof trait ===
           'string'
-            ? trait
-            : (
-                trait.name ||
-                `Trait ${trait.id ?? '?'}`
-              )
-        }`
+        ) {
+          return (
+            `• ${trait}`
+          );
+        }
+
+        return (
+          `• ${
+            trait.name ||
+            `Trait ${trait.id ?? '?'}`
+          }`
+        );
+      }
     )
     .join('\n')
     .slice(
@@ -512,7 +1121,7 @@ function buildTraitsText(
 }
 
 // ============================================================
-// TRAVAUX
+// JOBS
 // ============================================================
 
 function buildJobsText(
@@ -537,11 +1146,8 @@ function buildJobsText(
           ) > 0
       )
       .sort(
-        (
-          a,
-          b
-        ) => {
-          const priority =
+        (a, b) => {
+          const diff =
             number(
               b.priority
             ) -
@@ -550,9 +1156,9 @@ function buildJobsText(
             );
 
           if (
-            priority !== 0
+            diff !== 0
           ) {
-            return priority;
+            return diff;
           }
 
           return (
@@ -724,7 +1330,7 @@ function createColonistEmbed(
 
               `${moodEmoji(colonist.mood)} **Humeur :** ${
                 typeof colonist.mood ===
-                'number'
+                  'number'
                   ? Math.round(
                       colonist.mood *
                       10
@@ -812,7 +1418,7 @@ function createColonistEmbed(
       .setTimestamp();
 
   if (
-    state?.world
+    state.world
   ) {
     embed.setAuthor({
       name:
@@ -824,7 +1430,7 @@ function createColonistEmbed(
 }
 
 // ============================================================
-// RÉCUPÉRER LES MESSAGES DU BOT
+// MESSAGES COLONS EXISTANTS
 // ============================================================
 
 async function getExistingColonistMessages(
@@ -850,11 +1456,10 @@ async function getExistingColonistMessages(
         continue;
       }
 
-      const embed =
-        message.embeds?.[0];
-
       const footer =
-        embed?.footer?.text;
+        message.embeds?.[0]
+          ?.footer
+          ?.text;
 
       if (
         !footer
@@ -885,7 +1490,7 @@ async function getExistingColonistMessages(
     error
   ) {
     console.error(
-      '❌ AColony : impossible de lire les anciens messages :',
+      '❌ AColony : lecture fiches colons impossible :',
       error.message
     );
   }
@@ -894,7 +1499,7 @@ async function getExistingColonistMessages(
 }
 
 // ============================================================
-// SYNCHRONISATION SALON COLONS
+// MAJ SALON COLONS
 // ============================================================
 
 async function updateColonistsChannel(
@@ -944,48 +1549,25 @@ async function updateColonistsChannel(
     if (
       oldMessage
     ) {
-      try {
-        await oldMessage.edit({
-          content:
-            null,
+      await oldMessage.edit({
+        content:
+          null,
 
-          embeds:
-            [
-              embed
-            ]
-        });
-
-      } catch (
-        error
-      ) {
-        console.error(
-          `❌ AColony : modification de ${colonist.name} impossible :`,
-          error.message
-        );
-      }
+        embeds:
+          [
+            embed
+          ]
+      });
 
     } else {
-      try {
-        await channel.send({
-          embeds:
-            [
-              embed
-            ]
-        });
-
-      } catch (
-        error
-      ) {
-        console.error(
-          `❌ AColony : création de ${colonist.name} impossible :`,
-          error.message
-        );
-      }
+      await channel.send({
+        embeds:
+          [
+            embed
+          ]
+      });
     }
   }
-
-  // Supprime uniquement les anciennes fiches AColony
-  // correspondant à des colons qui ne sont plus présents.
 
   for (
     const [
@@ -1005,114 +1587,259 @@ async function updateColonistsChannel(
     try {
       await message.delete();
 
-    } catch (
-      error
-    ) {
-      console.error(
-        `❌ AColony : ancienne fiche ${colonistId} impossible à supprimer :`,
-        error.message
-      );
+    } catch {
+      // rien
     }
   }
 }
 
 // ============================================================
-// SALON CONNEXION
+// ROUTE LINK
 // ============================================================
 
-async function updateConnectionChannel(
-  channel,
-  member,
-  state
+async function handleLink(
+  request,
+  response
 ) {
-  if (
-    !channel
-  ) {
-    return;
-  }
-
-  const marker =
-    'ACOLONY_BRIDGE_STATUS';
-
-  let statusMessage =
-    null;
+  let body;
 
   try {
-    const messages =
-      await channel.messages.fetch({
-        limit: 50
-      });
+    body =
+      await readJsonBody(
+        request
+      );
 
-    statusMessage =
-      messages.find(
-        message =>
-          message.author.id ===
-            channel.client.user.id &&
-          message.content.includes(
-            marker
-          )
-      ) ||
-      null;
+  } catch (
+    error
+  ) {
+    return sendJson(
+      response,
+      400,
+      {
+        ok:
+          false,
 
-  } catch {
-    // rien
+        error:
+          error.message
+      }
+    );
   }
 
-  const content =
-    [
-      `<!-- ${marker} -->`,
-      '# 🏭 AColony Bridge',
-      '',
-      `👤 <@${member.id}>`,
-      '',
-      '🟢 **Bridge connecté**',
-      '',
-      `🏠 **Colonie :** ${state.colonyName || '?'}`,
-      `🌍 **Monde :** ${state.world || '?'}`,
-      `🎮 **Version :** ${state.version || '?'}`,
-      `👥 **Colons :** ${state.colonists?.length ?? 0}`,
-      '',
-      `💾 **Sauvegarde :** ${state.saveName || '?'}`,
-      '',
-      '🔄 Les données sont synchronisées automatiquement avec AColony.'
-    ].join(
-      '\n'
+  const code =
+    String(
+      body.code || ''
+    )
+      .trim()
+      .toUpperCase();
+
+  const installationId =
+    String(
+      body.installationId || ''
+    )
+      .trim();
+
+  if (
+    !code
+  ) {
+    return sendJson(
+      response,
+      400,
+      {
+        ok:
+          false,
+
+        error:
+          'Code AColony manquant'
+      }
+    );
+  }
+
+  if (
+    !installationId
+  ) {
+    return sendJson(
+      response,
+      400,
+      {
+        ok:
+          false,
+
+        error:
+          'installationId manquant'
+      }
+    );
+  }
+
+  const found =
+    findUserByCode(
+      code
     );
 
   if (
-    statusMessage
+    !found
   ) {
-    await statusMessage.edit({
-      content
-    });
+    return sendJson(
+      response,
+      404,
+      {
+        ok:
+          false,
 
-  } else {
-    await channel.send({
-      content
-    });
+        error:
+          'Code AColony invalide'
+      }
+    );
   }
+
+  const discordFound =
+    await findDiscordMember(
+      found.userId
+    );
+
+  if (
+    !discordFound
+  ) {
+    return sendJson(
+      response,
+      404,
+      {
+        ok:
+          false,
+
+        error:
+          'Compte Discord introuvable'
+      }
+    );
+  }
+
+  const {
+    member
+  } =
+    discordFound;
+
+  if (
+    !member.roles.cache.has(
+      ACOLONY_ROLE_ID
+    )
+  ) {
+    return sendJson(
+      response,
+      403,
+      {
+        ok:
+          false,
+
+        error:
+          'Rôle AColony manquant'
+      }
+    );
+  }
+
+  const token =
+    generateToken();
+
+  found.user.linked =
+    true;
+
+  found.user.installationId =
+    installationId;
+
+  found.user.tokenHash =
+    hashToken(
+      token
+    );
+
+  found.user.linkedAt =
+    new Date()
+      .toISOString();
+
+  found.user.lastSeenAt =
+    found.user.linkedAt;
+
+  found.data.users[
+    found.userId
+  ] =
+    found.user;
+
+  saveData(
+    found.data
+  );
+
+  const category =
+    findAColonyCategory(
+      member.guild,
+      member
+    );
+
+  if (
+    category
+  ) {
+    try {
+      await updateLinkPanel(
+        member,
+        category
+      );
+
+    } catch (
+      error
+    ) {
+      console.error(
+        '⚠️ AColony : panneau liaison non actualisé :',
+        error.message
+      );
+    }
+  }
+
+  console.log(
+    `🔗 AColony lié : ${member.user.tag} → ${installationId}`
+  );
+
+  return sendJson(
+    response,
+    200,
+    {
+      ok:
+        true,
+
+      linked:
+        true,
+
+      token,
+
+      discordUserId:
+        member.id,
+
+      message:
+        'Installation AColony liée avec succès'
+    }
+  );
 }
 
 // ============================================================
-// TRAITEMENT D'UNE MISE À JOUR
+// ROUTE UPDATE
 // ============================================================
 
 async function handleUpdate(
   request,
   response
 ) {
-  if (
-    !checkSecret(
+  const auth =
+    authenticateInstallation(
       request
-    )
+    );
+
+  if (
+    !auth
   ) {
     return sendJson(
       response,
       401,
       {
-        ok: false,
+        ok:
+          false,
+
         error:
-          'Unauthorized'
+          'Installation AColony non authentifiée'
       }
     );
   }
@@ -1132,26 +1859,11 @@ async function handleUpdate(
       response,
       400,
       {
-        ok: false,
+        ok:
+          false,
+
         error:
           error.message
-      }
-    );
-  }
-
-  const discordUserId =
-    body.discordUserId;
-
-  if (
-    !discordUserId
-  ) {
-    return sendJson(
-      response,
-      400,
-      {
-        ok: false,
-        error:
-          'discordUserId manquant'
       }
     );
   }
@@ -1165,7 +1877,9 @@ async function handleUpdate(
       response,
       400,
       {
-        ok: false,
+        ok:
+          false,
+
         error:
           'colonists manquant'
       }
@@ -1174,7 +1888,7 @@ async function handleUpdate(
 
   const found =
     await findDiscordMember(
-      discordUserId
+      auth.userId
     );
 
   if (
@@ -1184,7 +1898,9 @@ async function handleUpdate(
       response,
       404,
       {
-        ok: false,
+        ok:
+          false,
+
         error:
           'Membre Discord introuvable'
       }
@@ -1206,9 +1922,11 @@ async function handleUpdate(
       response,
       403,
       {
-        ok: false,
+        ok:
+          false,
+
         error:
-          'Le membre ne possède pas le rôle AColony'
+          'Rôle AColony manquant'
       }
     );
   }
@@ -1226,7 +1944,9 @@ async function handleUpdate(
       response,
       404,
       {
-        ok: false,
+        ok:
+          false,
+
         error:
           'Catégorie personnelle AColony introuvable'
       }
@@ -1247,22 +1967,21 @@ async function handleUpdate(
       response,
       404,
       {
-        ok: false,
+        ok:
+          false,
+
         error:
           'Salon 👥・colons introuvable'
       }
     );
   }
 
-  const connectionChannel =
-    findChannel(
-      guild,
-      category,
-      CHANNEL_NAMES.connection
-    );
-
   const state = {
-    discordUserId,
+    discordUserId:
+      member.id,
+
+    installationId:
+      auth.user.installationId,
 
     receivedAt:
       new Date()
@@ -1305,18 +2024,19 @@ async function handleUpdate(
   };
 
   playerStates.set(
-    discordUserId,
+    member.id,
     state
   );
 
   if (
-    discordClient?.acolonyBridge
+    discordClient
+      ?.acolonyBridge
   ) {
     discordClient
       .acolonyBridge
       .players
       .set(
-        discordUserId,
+        member.id,
         state
       );
   }
@@ -1326,24 +2046,23 @@ async function handleUpdate(
     state
   );
 
-  if (
-    connectionChannel
-  ) {
-    try {
-      await updateConnectionChannel(
-        connectionChannel,
-        member,
-        state
-      );
+  const data =
+    loadData();
 
-    } catch (
-      error
-    ) {
-      console.error(
-        '⚠️ AColony : mise à jour connexion impossible :',
-        error.message
-      );
-    }
+  if (
+    data.users[
+      member.id
+    ]
+  ) {
+    data.users[
+      member.id
+    ].lastSeenAt =
+      new Date()
+        .toISOString();
+
+    saveData(
+      data
+    );
   }
 
   console.log('');
@@ -1379,10 +2098,11 @@ async function handleUpdate(
     response,
     200,
     {
-      ok: true,
+      ok:
+        true,
 
       message:
-        'Données AColony reçues et Discord mis à jour',
+        'Données AColony reçues',
 
       colonists:
         state.colonists.length
@@ -1391,7 +2111,7 @@ async function handleUpdate(
 }
 
 // ============================================================
-// ROUTEUR ACOLONY
+// ROUTEUR
 // ============================================================
 
 async function handleAColonyRequest(
@@ -1406,29 +2126,26 @@ async function handleAColonyRequest(
 
   if (
     request.method ===
-    'OPTIONS'
-  ) {
-    if (
-      requestUrl.pathname.startsWith(
+      'OPTIONS' &&
+    requestUrl.pathname
+      .startsWith(
         '/acolony/'
       )
-    ) {
-      sendJson(
-        response,
-        200,
-        {
-          ok: true
-        }
-      );
+  ) {
+    sendJson(
+      response,
+      200,
+      {
+        ok:
+          true
+      }
+    );
 
-      return true;
-    }
-
-    return false;
+    return true;
   }
 
   // ==========================================================
-  // STATUS
+  // STATUS PUBLIC
   // ==========================================================
 
   if (
@@ -1441,7 +2158,8 @@ async function handleAColonyRequest(
       response,
       200,
       {
-        ok: true,
+        ok:
+          true,
 
         service:
           'Naru AColony Bridge',
@@ -1460,7 +2178,25 @@ async function handleAColonyRequest(
   }
 
   // ==========================================================
-  // UPDATE
+  // LIAISON
+  // ==========================================================
+
+  if (
+    request.method ===
+      'POST' &&
+    requestUrl.pathname ===
+      '/acolony/link'
+  ) {
+    await handleLink(
+      request,
+      response
+    );
+
+    return true;
+  }
+
+  // ==========================================================
+  // TÉLÉMÉTRIE / SAVE
   // ==========================================================
 
   if (
@@ -1495,6 +2231,76 @@ function getAColonyPlayerState(
     ) ||
     null
   );
+}
+
+// ============================================================
+// START
+// ============================================================
+
+function startAColonyBridge(
+  client
+) {
+  discordClient =
+    client;
+
+  if (
+    !client.acolonyBridge
+  ) {
+    client.acolonyBridge = {
+      players:
+        new Map(),
+
+      previousStates:
+        new Map(),
+
+      messages:
+        new Map()
+    };
+  }
+
+  ensureDataFile();
+
+  console.log(
+    '🏭 AColony Bridge : module chargé'
+  );
+
+  // Première vérification après démarrage.
+  setTimeout(
+    () => {
+      syncLinkPanels()
+        .catch(
+          error => {
+            console.error(
+              '❌ AColony : synchro initiale :',
+              error
+            );
+          }
+        );
+    },
+    10000
+  );
+
+  // Permet également de détecter automatiquement
+  // les nouveaux joueurs ayant reçu le rôle AColony.
+  if (
+    !scanInterval
+  ) {
+    scanInterval =
+      setInterval(
+        () => {
+          syncLinkPanels()
+            .catch(
+              error => {
+                console.error(
+                  '❌ AColony : synchro panneaux :',
+                  error
+                );
+              }
+            );
+        },
+        30000
+      );
+  }
 }
 
 // ============================================================
