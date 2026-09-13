@@ -58,12 +58,35 @@ const ACOLONY_ITEM_NAMES = new Map([
   [1210, 'Viande'],
   [1250, 'Pommes de terre'],
   [1251, 'Carottes'],
-  [1281, 'Repas végétarien'],
+  [1280, 'Repas niv. 1 (viande)'],
+  [1281, 'Repas niv. 1 (légumes)'],
+  [1282, 'Repas niv. 1 (pain)'],
+  [1283, 'Repas niv. 1 (viande humaine)'],
+  [1284, 'Repas niv. 2 (viande)'],
+  [1285, 'Repas niv. 2 (légumes)'],
+  [1286, 'Repas niv. 2 (pain)'],
+  [1287, 'Repas niv. 3 (viande)'],
+  [1288, 'Repas niv. 3 (légumes)'],
+  [1289, 'Repas niv. 3 (pain)'],
   [1295, 'Nourriture animale (végétale)'],
   [1296, 'Nourriture animale (viande)'],
   [1575, 'Jeune arbre'],
   [1650, 'Médicament simple'],
+  [9999, 'Batte en bois'],
+  [10000, 'Hache'],
+  [10005, 'Batte barbelée'],
+  [10100, 'Épée'],
+  [10105, 'Batte en métal'],
+  [10108, 'Hache moderne'],
+  [10110, 'Épée moderne'],
+  [12000, 'Arc'],
+  [12001, 'Arbalète'],
   [12100, 'Pistolet'],
+  [12120, 'Fusil à pompe'],
+  [12145, 'Arbalète moderne'],
+  [13000, 'Bouclier en bois'],
+  [13001, 'Bouclier en acier'],
+  [13002, 'Bouclier moderne'],
   [25, 'Poulet'],
   [35, 'Mouche'],
   [36, 'Mouche guerrière'],
@@ -1328,26 +1351,52 @@ function createProductionEmbed(state) {
     .setDescription(lines.join('\n'));
 }
 
+function makeProgressBar(current, required, size = 20) {
+  const safeRequired = Number(required) > 0 ? Number(required) : 0;
+  const safeCurrent = Math.max(0, Number(current) || 0);
+  const ratio = safeRequired > 0 ? Math.max(0, Math.min(1, safeCurrent / safeRequired)) : 0;
+  const filled = Math.round(ratio * size);
+  return `${'█'.repeat(filled)}${'░'.repeat(Math.max(0, size - filled))}`;
+}
+
 function createResearchEmbed(state) {
   const research = state.research && typeof state.research === 'object' ? state.research : null;
   const currentResearchId = Number(research?.currentResearchId ?? -1);
   const progress = Array.isArray(research?.progress) ? research.progress : [];
 
   const lines = [
-    `🧪 **Sciences débloquées :** ${state.sciences ?? 'Non disponible'}`,
-    `📚 **Recherche en cours :** ${currentResearchId >= 0 ? `Technologie #${currentResearchId}` : 'Aucune'}`
+    `🧪 **Sciences débloquées :** ${state.sciences ?? 'Non disponible'}`
   ];
 
-  if (progress.length > 0) {
-    lines.push('', '### 📈 Progression scientifique');
-    for (const item of progress) {
-      const type = Number(item.type ?? item.Type ?? 0);
-      const current = Number(item.current ?? item.Current ?? 0);
-      const required = Number(item.required ?? item.Required ?? 0);
-      const active = Number(item.activeResearchers ?? item.ActiveResearchers ?? 0);
-      const percent = required > 0 ? Math.max(0, Math.min(100, current / required * 100)) : 0;
-      const typeName = ACOLONY_RESEARCH_TYPES[type] || `Science ${type}`;
-      lines.push(`• **${typeName}** : ${formatFrenchNumber(current)}/${formatFrenchNumber(required)} (${Math.round(percent)} %) • 👨‍🔬 ${active}`);
+  if (currentResearchId < 0) {
+    lines.push('', '🔬 **Recherche en cours :** Aucune');
+  } else {
+    lines.push('', `🔬 **Recherche en cours :** Technologie #${currentResearchId}`);
+
+    // On n'affiche qu'une progression réellement active.
+    // Les anciennes valeurs 0/40, 0/65, 0/80 correspondaient aux réserves/types
+    // de science et non au coût exact de chaque technologie.
+    const activeProgress = progress.find(item =>
+      Number(item.activeResearchers ?? item.ActiveResearchers ?? 0) > 0
+    );
+
+    if (activeProgress) {
+      const current = Number(activeProgress.current ?? activeProgress.Current ?? 0);
+      const required = Number(activeProgress.required ?? activeProgress.Required ?? 0);
+      const active = Number(activeProgress.activeResearchers ?? activeProgress.ActiveResearchers ?? 0);
+      const percent = required > 0
+        ? Math.max(0, Math.min(100, Math.round((current / required) * 100)))
+        : 0;
+
+      lines.push(
+        '',
+        '### 📈 Progression',
+        `\`${makeProgressBar(current, required)}\` **${percent} %**`,
+        `${formatFrenchNumber(current)} / ${formatFrenchNumber(required)}`,
+        `👨‍🔬 Chercheur${active > 1 ? 's' : ''} actif${active > 1 ? 's' : ''} : **${active}**`
+      );
+    } else {
+      lines.push('', '⏳ Recherche sélectionnée, mais aucune progression active détectée pour le moment.');
     }
   }
 
