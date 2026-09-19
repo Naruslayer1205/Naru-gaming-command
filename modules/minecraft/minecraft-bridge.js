@@ -1299,6 +1299,15 @@ async function syncLinkPanels() {
     const guild
     of discordClient.guilds.cache.values()
   ) {
+    try {
+      await guild.members.fetch();
+    } catch (error) {
+      console.error(
+        `❌ Minecraft : impossible de récupérer les membres de ${guild.name} :`,
+        error.message
+      );
+    }
+
     for (
       const member
       of guild.members.cache.values()
@@ -1317,20 +1326,9 @@ async function syncLinkPanels() {
         continue;
       }
 
-      const category =
-        findMinecraftCategory(
-          guild,
-          member
-        );
-
-      if (!category) {
-        continue;
-      }
-
       try {
-        await updateLinkPanel(
-          member,
-          category
+        await waitForMinecraftSpace(
+          member
         );
 
       } catch (error) {
@@ -1693,7 +1691,7 @@ function startMinecraftBridge(
           }
         );
     },
-    3000
+    1000
   );
 
   console.log(
