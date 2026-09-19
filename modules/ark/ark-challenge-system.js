@@ -1349,6 +1349,9 @@ async function findPlayerChallengeContext(
               'function' &&
             item.isTextBased() &&
             item.parent &&
+            item.parent.name.startsWith(
+              '🦖 ARK — '
+            ) &&
             (
               item.parent
                 .permissionOverwrites
