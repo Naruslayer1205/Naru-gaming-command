@@ -17,6 +17,11 @@ const {
   handleAColonyRequest
 } = require('../acolony/acolony-bridge');
 
+const {
+  startMinecraftBridge,
+  handleMinecraftRequest
+} = require('../minecraft/minecraft-bridge');
+
 const PORT =
   Number(process.env.SERVER_PORT) ||
   Number(process.env.BRIDGE_PORT) ||
@@ -101,6 +106,24 @@ function startBridgeServer(
   }
 
   // ==========================================================
+  // INITIALISATION MINECRAFT
+  // ==========================================================
+
+  try {
+    startMinecraftBridge(
+      client
+    );
+
+  } catch (
+    error
+  ) {
+    console.error(
+      '❌ Impossible d’initialiser Minecraft Bridge :',
+      error
+    );
+  }
+
+  // ==========================================================
   // SERVEUR HTTP
   // ==========================================================
 
@@ -172,6 +195,22 @@ function startBridgeServer(
 
           if (
             acolonyHandled
+          ) {
+            return;
+          }
+
+          // ==================================================
+          // MINECRAFT
+          // ==================================================
+
+          const minecraftHandled =
+            await handleMinecraftRequest(
+              request,
+              response
+            );
+
+          if (
+            minecraftHandled
           ) {
             return;
           }
@@ -254,19 +293,23 @@ function startBridgeServer(
       );
 
       console.log(
-        '🦖 ARK      → /api/ark/...'
+        '🦖 ARK       → /api/ark/...'
       );
 
       console.log(
-        '🚘 GTA V    → /gta/...'
+        '🚘 GTA V     → /gta/...'
       );
 
       console.log(
-        '🚛 ATS/ETS2 → /truck/...'
+        '🚛 ATS/ETS2  → /truck/...'
       );
 
       console.log(
-        '🏭 AColony  → /acolony/...'
+        '🏭 AColony   → /acolony/...'
+      );
+
+      console.log(
+        '⛏️ Minecraft → /minecraft/...'
       );
 
       console.log(
