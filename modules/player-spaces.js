@@ -50,6 +50,16 @@ const {
 } =
   require('./acolony/player-spaces');
 
+// ─────────────────────────────
+// MINECRAFT
+// ─────────────────────────────
+
+const {
+  createMinecraftPlayerSpace,
+  deleteMinecraftPlayerSpace
+} =
+  require('./minecraft/player-spaces');
+
 // ============================================================
 // RÔLES
 // ============================================================
@@ -69,6 +79,9 @@ const ETS2_ROLE_ID =
 const ACOLONY_ROLE_ID =
   '1548387660517609572';
 
+const MINECRAFT_ROLE_ID =
+  '1550948318639554620';
+
 // ============================================================
 // CATÉGORIES PRINCIPALES
 // ============================================================
@@ -87,6 +100,9 @@ const ETS2_MAIN_CATEGORY_ID =
 
 const ACOLONY_MAIN_CATEGORY_ID =
   '1548387571388653619';
+
+const MINECRAFT_MAIN_CATEGORY_ID =
+  '1550948429838942319';
 
 // ============================================================
 // CONFIGURATION JEUX
@@ -246,6 +262,26 @@ const SPACE_LAYOUTS = {
       category =>
         category.name.startsWith(
           '🏭 AColony — '
+        )
+  },
+
+  minecraft: {
+    key:
+      'minecraft',
+
+    name:
+      'Minecraft',
+
+    emoji:
+      '⛏️',
+
+    mainCategoryId:
+      MINECRAFT_MAIN_CATEGORY_ID,
+
+    matches:
+      category =>
+        category.name.startsWith(
+          '⛏️ Minecraft — '
         )
   }
 };
@@ -712,6 +748,21 @@ async function syncMember(
       member
     );
   }
+
+  // ==========================================================
+  // MINECRAFT
+  // ==========================================================
+
+  if (
+    hasRole(
+      member,
+      MINECRAFT_ROLE_ID
+    )
+  ) {
+    await createMinecraftPlayerSpace(
+      member
+    );
+  }
 }
 
 // ============================================================
@@ -807,6 +858,9 @@ async function syncGuild(
   let acolonyCount =
     0;
 
+  let minecraftCount =
+    0;
+
   for (
     const member
     of realMembers
@@ -856,6 +910,15 @@ async function syncGuild(
     ) {
       acolonyCount++;
     }
+
+    if (
+      hasRole(
+        member,
+        MINECRAFT_ROLE_ID
+      )
+    ) {
+      minecraftCount++;
+    }
   }
 
   console.log(
@@ -876,6 +939,10 @@ async function syncGuild(
 
   console.log(
     `🏭 AColony : ${acolonyCount} joueur(s)`
+  );
+
+  console.log(
+    `⛏️ Minecraft : ${minecraftCount} joueur(s)`
   );
 
   // ==========================================================
@@ -1095,6 +1162,50 @@ async function syncGuild(
 
   console.log(
     '✅ Synchronisation AColony terminée.'
+  );
+
+  await sleep(
+    750
+  );
+
+  // ==========================================================
+  // MINECRAFT
+  // ==========================================================
+
+  console.log('');
+
+  console.log(
+    '⛏️ Synchronisation Minecraft...'
+  );
+
+  for (
+    const member
+    of realMembers
+  ) {
+    if (
+      !hasRole(
+        member,
+        MINECRAFT_ROLE_ID
+      )
+    ) {
+      continue;
+    }
+
+    try {
+      await createMinecraftPlayerSpace(
+        member
+      );
+
+    } catch (error) {
+      console.error(
+        `❌ Minecraft : ${member.user.tag} :`,
+        error
+      );
+    }
+  }
+
+  console.log(
+    '✅ Synchronisation Minecraft terminée.'
   );
 
   // ==========================================================
@@ -1470,6 +1581,66 @@ async function handleRoleChange(
           'acolony'
         );
       }
+
+      // ======================================================
+      // MINECRAFT
+      // ======================================================
+
+      const oldMinecraft =
+        hasRole(
+          oldMember,
+          MINECRAFT_ROLE_ID
+        );
+
+      const newMinecraft =
+        hasRole(
+          newMember,
+          MINECRAFT_ROLE_ID
+        );
+
+      if (
+        !oldMinecraft &&
+        newMinecraft
+      ) {
+        console.log(
+          `⛏️ Rôle Minecraft attribué à ${newMember.user.tag}`
+        );
+
+        await createMinecraftPlayerSpace(
+          newMember
+        );
+
+        await sleep(
+          500
+        );
+
+        await reorderOneGame(
+          newMember.guild,
+          'minecraft'
+        );
+      }
+
+      if (
+        oldMinecraft &&
+        !newMinecraft
+      ) {
+        console.log(
+          `⛏️ Rôle Minecraft retiré à ${newMember.user.tag}`
+        );
+
+        await deleteMinecraftPlayerSpace(
+          newMember
+        );
+
+        await sleep(
+          500
+        );
+
+        await reorderOneGame(
+          newMember.guild,
+          'minecraft'
+        );
+      }
     }
   );
 }
@@ -1551,6 +1722,10 @@ function startPlayerSpaces(
     `🏭 AColony → ${ACOLONY_ROLE_ID}`
   );
 
+  console.log(
+    `⛏️ Minecraft → ${MINECRAFT_ROLE_ID}`
+  );
+
   // ==========================================================
   // CATÉGORIES PRINCIPALES
   // ==========================================================
@@ -1577,6 +1752,10 @@ function startPlayerSpaces(
 
   console.log(
     `🏭 AColony → ${ACOLONY_MAIN_CATEGORY_ID}`
+  );
+
+  console.log(
+    `⛏️ Minecraft → ${MINECRAFT_MAIN_CATEGORY_ID}`
   );
 
   // ==========================================================
@@ -1704,5 +1883,10 @@ module.exports = {
   // ACOLONY
 
   createAColonyPlayerSpace,
-  deleteAColonyPlayerSpace
+  deleteAColonyPlayerSpace,
+
+  // MINECRAFT
+
+  createMinecraftPlayerSpace,
+  deleteMinecraftPlayerSpace
 };
