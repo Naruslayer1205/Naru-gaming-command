@@ -739,98 +739,446 @@ async function upsertMinecraftEmbed(
   }
 }
 
-async function syncMinecraftWorld(
+function safeText(value, fallback = 'Non disponible') {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ''
+  ) {
+    return fallback;
+  }
+
+  return String(value);
+}
+
+function listText(items, fallback = 'Aucune donnée') {
+  if (
+    !Array.isArray(items) ||
+    items.length === 0
+  ) {
+    return fallback;
+  }
+
+  return items
+    .slice(0, 12)
+    .map(item => `• ${item}`)
+    .join('\n')
+    .slice(0, 1000);
+}
+
+function formatPlayTime(ticks) {
+  const seconds =
+    Math.floor(
+      Number(ticks || 0) / 20
+    );
+
+  const hours =
+    Math.floor(seconds / 3600);
+
+  const minutes =
+    Math.floor(
+      (seconds % 3600) / 60
+    );
+
+  return `${hours} h ${minutes} min`;
+}
+
+function formatDistance(cm) {
+  const meters =
+    Number(cm || 0) / 100;
+
+  if (meters >= 1000) {
+    return `${(meters / 1000).toFixed(1)} km`;
+  }
+
+  return `${Math.round(meters)} m`;
+}
+
+async function syncDataChannel(
   member,
   category,
-  payload
+  channelName,
+  footer,
+  embed
 ) {
   const channel =
     findChannel(
       member.guild,
       category,
-      CHANNEL_NAMES.world
+      channelName
     );
 
   if (!channel) {
     return false;
   }
 
-  const instance =
-    String(
-      payload.instance || 'Inconnue'
-    ).trim();
+  await upsertMinecraftEmbed(
+    channel,
+    footer,
+    embed.setFooter({
+      text: footer
+    }).setTimestamp()
+  );
 
-  const world =
-    String(
-      payload.world || 'Inconnu'
-    ).trim();
+  return true;
+}
 
-  const launcher =
-    String(
-      payload.launcher || 'CurseForge'
-    ).trim();
+async function syncAllMinecraftChannels(
+  member,
+  category,
+  payload
+) {
+  const d =
+    payload.data || {};
 
-  const detectedAt =
+  const now =
     payload.detectedAt
       ? new Date(payload.detectedAt)
       : new Date();
 
-  const timestamp =
-    Number.isNaN(
-      detectedAt.getTime()
-    )
-      ? new Date()
-      : detectedAt;
+  const unix =
+    Math.floor(
+      (
+        Number.isNaN(now.getTime())
+          ? Date.now()
+          : now.getTime()
+      ) / 1000
+    );
 
-  const embed =
+  await syncDataChannel(
+    member,
+    category,
+    CHANNEL_NAMES.player,
+    'Naru Minecraft Bridge • Joueur',
     new EmbedBuilder()
-      .setTitle(
-        '🌍 Monde Minecraft actif'
+      .setTitle('👤 Joueur Minecraft')
+      .setColor(0x57F287)
+      .addFields(
+        {
+          name: '📍 Position',
+          value:
+            `X **${Number(d.x || 0).toFixed(1)}** • Y **${Number(d.y || 0).toFixed(1)}** • Z **${Number(d.z || 0).toFixed(1)}**`
+        },
+        {
+          name: '🌌 Dimension',
+          value: `\`${safeText(d.dimension)}\``,
+          inline: true
+        },
+        {
+          name: '❤️ Vie',
+          value: `${Number(d.health || 0).toFixed(1)} HP`,
+          inline: true
+        },
+        {
+          name: '🍗 Nourriture',
+          value: `${Number(d.food || 0)}/20`,
+          inline: true
+        },
+        {
+          name: '✨ XP',
+          value:
+            `Niveau **${Number(d.xpLevel || 0)}** • Total **${Number(d.xpTotal || 0)}**`,
+          inline: false
+        },
+        {
+          name: '🛏️ Respawn',
+          value: safeText(d.respawn),
+          inline: true
+        },
+        {
+          name: '💀 Dernière mort',
+          value: safeText(d.lastDeath),
+          inline: true
+        },
+        {
+          name: '🛡️ Équipement',
+          value: listText(d.equipment),
+          inline: false
+        },
+        {
+          name: '🎒 Inventaire',
+          value: listText(d.inventoryHighlights),
+          inline: false
+        }
       )
+  );
+
+  await syncDataChannel(
+    member,
+    category,
+    CHANNEL_NAMES.world,
+    'Naru Minecraft Bridge • Monde',
+    new EmbedBuilder()
+      .setTitle('🌍 Monde Minecraft actif')
       .setColor(0x57F287)
       .setDescription(
-        'Le Bridge affiche uniquement la **save active la plus récente**.'
+        'Une seule save est affichée : la save active/la plus récemment utilisée.'
       )
       .addFields(
         {
           name: '📦 Instance / Modpack',
-          value: `\`${instance}\``,
+          value: `\`${safeText(d.instance)}\``,
           inline: false
         },
         {
           name: '🌍 Save active',
-          value: `\`${world}\``,
+          value: `\`${safeText(d.world)}\``,
           inline: false
         },
         {
-          name: '🚀 Launcher',
-          value: `\`${launcher}\``,
+          name: '🧱 Version',
+          value: `\`${safeText(d.version)}\``,
           inline: true
         },
         {
-          name: '🟢 Minecraft',
-          value: 'Détecté',
+          name: '🎮 Mode',
+          value: safeText(d.gameMode),
           inline: true
         },
         {
-          name: '🔄 Synchronisation',
-          value:
-            `<t:${Math.floor(
-              timestamp.getTime() / 1000
-            )}:R>`,
+          name: '⚔️ Difficulté',
+          value: safeText(d.difficulty),
+          inline: true
+        },
+        {
+          name: '☠️ Hardcore',
+          value: d.hardcore ? 'Oui' : 'Non',
+          inline: true
+        },
+        {
+          name: '📅 Jour',
+          value: `${Number(d.day || 0)}`,
+          inline: true
+        },
+        {
+          name: '🌦️ Météo',
+          value: safeText(d.weather),
+          inline: true
+        },
+        {
+          name: '🌱 Seed',
+          value: `\`${safeText(d.seed)}\``,
+          inline: false
+        },
+        {
+          name: '🔄 Dernière synchro',
+          value: `<t:${unix}:R>`,
           inline: false
         }
       )
-      .setFooter({
-        text:
-          'Naru Minecraft Bridge • Monde'
-      })
-      .setTimestamp();
+  );
 
-  await upsertMinecraftEmbed(
-    channel,
-    'Naru Minecraft Bridge • Monde',
-    embed
+  await syncDataChannel(
+    member,
+    category,
+    CHANNEL_NAMES.statistics,
+    'Naru Minecraft Bridge • Statistiques',
+    new EmbedBuilder()
+      .setTitle('📊 Statistiques Minecraft')
+      .setColor(0x5865F2)
+      .addFields(
+        {
+          name: '⏱️ Temps joué',
+          value: formatPlayTime(d.playTimeTicks),
+          inline: true
+        },
+        {
+          name: '💀 Morts',
+          value: `${Number(d.deaths || 0)}`,
+          inline: true
+        },
+        {
+          name: '⚔️ Mobs tués',
+          value: `${Number(d.mobKills || 0)}`,
+          inline: true
+        },
+        {
+          name: '👥 Joueurs tués',
+          value: `${Number(d.playerKills || 0)}`,
+          inline: true
+        },
+        {
+          name: '🦘 Sauts',
+          value: `${Number(d.jumps || 0).toLocaleString('fr-FR')}`,
+          inline: true
+        },
+        {
+          name: '🚶 Marche',
+          value: formatDistance(d.walkCm),
+          inline: true
+        },
+        {
+          name: '🏃 Course',
+          value: formatDistance(d.sprintCm),
+          inline: true
+        },
+        {
+          name: '🏊 Nage',
+          value: formatDistance(d.swimCm),
+          inline: true
+        },
+        {
+          name: '🪽 Elytra',
+          value: formatDistance(d.elytraCm),
+          inline: true
+        },
+        {
+          name: '👹 Mobs les plus tués',
+          value: listText(d.topMobs),
+          inline: false
+        },
+        {
+          name: '⛏️ Blocs les plus minés',
+          value: listText(d.topMined),
+          inline: false
+        }
+      )
+  );
+
+  const advancementPercent =
+    Number(d.advancementTotal || 0) > 0
+      ? Math.round(
+          Number(d.advancementDone || 0) /
+          Number(d.advancementTotal || 1) *
+          100
+        )
+      : 0;
+
+  await syncDataChannel(
+    member,
+    category,
+    CHANNEL_NAMES.progression,
+    'Naru Minecraft Bridge • Progression',
+    new EmbedBuilder()
+      .setTitle('🏆 Progression Minecraft')
+      .setColor(0xFEE75C)
+      .addFields(
+        {
+          name: '🏅 Advancements',
+          value:
+            `**${Number(d.advancementDone || 0)} / ${Number(d.advancementTotal || 0)}** (${advancementPercent} %)`,
+          inline: false
+        },
+        {
+          name: '🆕 Derniers débloqués',
+          value: listText(d.recentAdvancements),
+          inline: false
+        }
+      )
+  );
+
+  await syncDataChannel(
+    member,
+    category,
+    CHANNEL_NAMES.challenges,
+    'Naru Minecraft Bridge • Défis',
+    new EmbedBuilder()
+      .setTitle('🎯 Défis Minecraft')
+      .setColor(0xEB459E)
+      .setDescription(
+        'Le suivi automatique est connecté aux statistiques de la save active.'
+      )
+      .addFields(
+        {
+          name: '📈 Compteurs disponibles',
+          value:
+            `Mobs tués : **${Number(d.mobKills || 0)}**\n` +
+            `Morts : **${Number(d.deaths || 0)}**\n` +
+            `Sauts : **${Number(d.jumps || 0).toLocaleString('fr-FR')}**\n` +
+            `Advancements : **${Number(d.advancementDone || 0)}**`
+        },
+        {
+          name: 'ℹ️ État',
+          value:
+            'Les défis automatiques pourront utiliser directement ces compteurs.'
+        }
+      )
+  );
+
+  await syncDataChannel(
+    member,
+    category,
+    CHANNEL_NAMES.journal,
+    'Naru Minecraft Bridge • Journal',
+    new EmbedBuilder()
+      .setTitle('📜 Journal Minecraft')
+      .setColor(0x3498DB)
+      .setDescription(
+        `Dernière activité détectée sur **${safeText(d.world)}**.`
+      )
+      .addFields(
+        {
+          name: '📦 Instance',
+          value: safeText(d.instance),
+          inline: true
+        },
+        {
+          name: '🌌 Dimension',
+          value: safeText(d.dimension),
+          inline: true
+        },
+        {
+          name: '📍 Position actuelle',
+          value:
+            `${Number(d.x || 0).toFixed(0)}, ${Number(d.y || 0).toFixed(0)}, ${Number(d.z || 0).toFixed(0)}`,
+          inline: false
+        },
+        {
+          name: '🕒 Activité',
+          value: `<t:${unix}:R>`,
+          inline: false
+        }
+      )
+  );
+
+  await syncDataChannel(
+    member,
+    category,
+    CHANNEL_NAMES.commands,
+    'Naru Minecraft Bridge • Commandes',
+    new EmbedBuilder()
+      .setTitle('⚙️ Commandes Minecraft')
+      .setColor(0x95A5A6)
+      .setDescription(
+        'Le Bridge fonctionne automatiquement : aucune commande n’est nécessaire pour synchroniser la save.'
+      )
+      .addFields(
+        {
+          name: '🔄 Synchronisation',
+          value:
+            'Lance Minecraft via CurseForge et ouvre un monde. Les données sont actualisées automatiquement.'
+        },
+        {
+          name: '🌍 Changer de monde',
+          value:
+            'Ouvre simplement une autre save : le Bridge basculera automatiquement dessus.'
+        }
+      )
+  );
+
+  await syncDataChannel(
+    member,
+    category,
+    CHANNEL_NAMES.help,
+    'Naru Minecraft Bridge • Aide Auto',
+    new EmbedBuilder()
+      .setTitle('🆘 Minecraft Game Bridge')
+      .setColor(0x5865F2)
+      .setDescription(
+        'Ton espace Minecraft est alimenté automatiquement à partir de la save CurseForge active.'
+      )
+      .addFields(
+        {
+          name: '📡 Données détectées',
+          value:
+            'Monde, joueur, position, vie, nourriture, XP, statistiques, déplacements, mobs, blocs minés et advancements.'
+        },
+        {
+          name: '🔒 Confidentialité du Player Space',
+          value:
+            'Les données sont publiées uniquement dans ton espace Minecraft privé configuré sur le serveur.'
+        }
+      )
   );
 
   return true;
@@ -1822,14 +2170,20 @@ async function handleMinecraftRequest(
           request
         );
 
+      const minecraftData =
+        body.data &&
+        typeof body.data === 'object'
+          ? body.data
+          : {};
+
       const instance =
         String(
-          body.instance || ''
+          minecraftData.instance || ''
         ).trim();
 
       const world =
         String(
-          body.world || ''
+          minecraftData.world || ''
         ).trim();
 
       if (
@@ -1888,7 +2242,7 @@ async function handleMinecraftRequest(
         return true;
       }
 
-      await syncMinecraftWorld(
+      await syncAllMinecraftChannels(
         discord.member,
         category,
         body
@@ -1909,6 +2263,11 @@ async function handleMinecraftRequest(
 
       saveData(
         auth.data
+      );
+
+      await updateLinkPanel(
+        discord.member,
+        category
       );
 
       sendJson(
