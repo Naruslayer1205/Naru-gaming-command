@@ -23,7 +23,7 @@ const CATEGORY_PREFIX =
 
 const MINECRAFT_DOWNLOAD_URL =
   process.env.MINECRAFT_DOWNLOAD_URL ||
-  null;
+  'https://github.com/Naruslayer1205/Naru-gaming-command/releases/download/minecraft-bridge-v1.0.0/NaruMinecraftBridge.exe';
 
 const CHANNEL_NAMES = {
   player: '👤・joueur',
