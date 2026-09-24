@@ -804,6 +804,255 @@ async function fetchGuildMembersOnce(
 }
 
 // ============================================================
+// NETTOYAGE DES PLAYER SPACES ORPHELINS
+// ============================================================
+
+function getPlayerSpaceOwnerIds(
+  guild,
+  category
+) {
+  const botId =
+    guild.members.me?.id;
+
+  return Array.from(
+    category.permissionOverwrites.cache.values()
+  )
+    .filter(
+      overwrite =>
+        // Discord : 1 = permission overwrite d'un membre.
+        // On ignore l'overwrite du bot lui-même.
+        Number(overwrite.type) === 1 &&
+        overwrite.id !== botId
+    )
+    .map(
+      overwrite =>
+        overwrite.id
+    );
+}
+
+async function memberStillExists(
+  guild,
+  memberId,
+  fetchedMembers
+) {
+  if (
+    fetchedMembers?.has(
+      memberId
+    )
+  ) {
+    return true;
+  }
+
+  try {
+    const member =
+      await guild.members.fetch(
+        memberId
+      );
+
+    return Boolean(
+      member
+    );
+
+  } catch (error) {
+    // 10007 = Unknown Member : l'utilisateur n'est plus sur le serveur.
+    if (
+      error?.code === 10007 ||
+      error?.rawError?.code === 10007
+    ) {
+      return false;
+    }
+
+    // En cas de souci Discord/réseau, on NE SUPPRIME RIEN par sécurité.
+    console.warn(
+      `⚠️ Player Spaces : impossible de vérifier le membre ${memberId} sur ${guild.name} : ${error.message}`
+    );
+
+    return null;
+  }
+}
+
+async function deleteOrphanCategory(
+  category
+) {
+  const guild =
+    category.guild;
+
+  const children =
+    guild.channels.cache.filter(
+      channel =>
+        channel.parentId ===
+          category.id
+    );
+
+  for (
+    const channel
+    of children.values()
+  ) {
+    try {
+      await channel.delete(
+        'Player Space orphelin : propriétaire absent du serveur'
+      );
+
+      await sleep(
+        250
+      );
+    } catch (error) {
+      console.error(
+        `❌ Player Spaces : impossible de supprimer ${channel.name} :`,
+        error
+      );
+    }
+  }
+
+  try {
+    const categoryName =
+      category.name;
+
+    await category.delete(
+      'Player Space orphelin : propriétaire absent du serveur'
+    );
+
+    console.log(
+      `🗑️ Player Space orphelin supprimé : ${categoryName}`
+    );
+
+    return true;
+  } catch (error) {
+    console.error(
+      `❌ Player Spaces : impossible de supprimer la catégorie ${category.name} :`,
+      error
+    );
+
+    return false;
+  }
+}
+
+async function cleanupOrphanedPlayerSpaces(
+  guild,
+  fetchedMembers
+) {
+  console.log('');
+  console.log(
+    '🧹 Player Spaces : recherche des espaces orphelins...'
+  );
+
+  let deletedCount =
+    0;
+
+  for (
+    const layout
+    of Object.values(
+      SPACE_LAYOUTS
+    )
+  ) {
+    const categories =
+      findPlayerCategories(
+        guild,
+        layout
+      );
+
+    for (
+      const category
+      of categories
+    ) {
+      const ownerIds =
+        getPlayerSpaceOwnerIds(
+          guild,
+          category
+        );
+
+      // Aucune permission membre identifiable : on garde la catégorie.
+      // Cela évite toute suppression hasardeuse d'une catégorie mal configurée.
+      if (
+        ownerIds.length === 0
+      ) {
+        console.warn(
+          `⚠️ ${layout.name} : propriétaire introuvable dans les permissions de ${category.name}, catégorie conservée.`
+        );
+
+        continue;
+      }
+
+      let hasExistingOwner =
+        false;
+
+      let verificationFailed =
+        false;
+
+      for (
+        const ownerId
+        of ownerIds
+      ) {
+        const exists =
+          await memberStillExists(
+            guild,
+            ownerId,
+            fetchedMembers
+          );
+
+        if (
+          exists === true
+        ) {
+          hasExistingOwner =
+            true;
+
+          break;
+        }
+
+        if (
+          exists === null
+        ) {
+          verificationFailed =
+            true;
+
+          break;
+        }
+      }
+
+      if (
+        hasExistingOwner ||
+        verificationFailed
+      ) {
+        continue;
+      }
+
+      console.log(
+        `👻 ${layout.name} : espace orphelin détecté → ${category.name}`
+      );
+
+      const deleted =
+        await deleteOrphanCategory(
+          category
+        );
+
+      if (
+        deleted
+      ) {
+        deletedCount++;
+      }
+
+      await sleep(
+        350
+      );
+    }
+  }
+
+  if (
+    deletedCount === 0
+  ) {
+    console.log(
+      '✅ Player Spaces : aucun espace orphelin détecté.'
+    );
+  } else {
+    console.log(
+      `✅ Player Spaces : ${deletedCount} espace(s) orphelin(s) supprimé(s).`
+    );
+  }
+
+  console.log('');
+}
+
+// ============================================================
 // SYNCHRONISATION D'UN SERVEUR
 // ============================================================
 
@@ -828,6 +1077,13 @@ async function syncGuild(
     await fetchGuildMembersOnce(
       guild
     );
+
+  // Nettoie aussi les espaces créés pour des membres qui avaient
+  // déjà quitté le serveur avant l'installation de guildMemberRemove.
+  await cleanupOrphanedPlayerSpaces(
+    guild,
+    members
+  );
 
   const realMembers =
     Array.from(
@@ -1970,6 +2226,7 @@ module.exports = {
   syncGuild,
   syncMember,
   handleMemberRemove,
+  cleanupOrphanedPlayerSpaces,
   reorderAllPlayerSpaces,
   reorderGameSpaces,
 
