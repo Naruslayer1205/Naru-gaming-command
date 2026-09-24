@@ -1679,6 +1679,119 @@ async function handleMemberAdd(
 }
 
 // ============================================================
+// DÉPART D'UN MEMBRE
+// ============================================================
+
+async function handleMemberRemove(
+  member
+) {
+  if (
+    !member ||
+    !member.user ||
+    member.user.bot
+  ) {
+    return;
+  }
+
+  await queueMemberTask(
+    member.id,
+    async () => {
+      console.log('');
+      console.log(
+        `👋 ${member.user.tag} a quitté ${member.guild.name} — suppression de tous ses Player Spaces...`
+      );
+
+      const deletions = [
+        {
+          name: 'ARK',
+          emoji: '🦖',
+          gameKey: 'ark',
+          run: () => deleteArkPlayerSpace(member)
+        },
+        {
+          name: 'GTA V',
+          emoji: '🚘',
+          gameKey: 'gta',
+          run: () => deleteGtaPlayerSpace(member)
+        },
+        {
+          name: 'ATS',
+          emoji: '🇺🇸',
+          gameKey: 'ats',
+          run: () => deleteAtsEtsPlayerSpace(
+            member,
+            ATS_GAME
+          )
+        },
+        {
+          name: 'ETS2',
+          emoji: '🇪🇺',
+          gameKey: 'ets2',
+          run: () => deleteAtsEtsPlayerSpace(
+            member,
+            ETS2_GAME
+          )
+        },
+        {
+          name: 'AColony',
+          emoji: '🏭',
+          gameKey: 'acolony',
+          run: () => deleteAColonyPlayerSpace(member)
+        },
+        {
+          name: 'Minecraft',
+          emoji: '⛏️',
+          gameKey: 'minecraft',
+          run: () => deleteMinecraftPlayerSpace(member)
+        }
+      ];
+
+      for (
+        const deletion
+        of deletions
+      ) {
+        try {
+          await deletion.run();
+
+          console.log(
+            `${deletion.emoji} ${deletion.name} : nettoyage terminé pour ${member.user.tag}.`
+          );
+        } catch (error) {
+          console.error(
+            `❌ ${deletion.name} : erreur pendant le nettoyage de ${member.user.tag} :`,
+            error
+          );
+        }
+
+        await sleep(
+          350
+        );
+      }
+
+      await sleep(
+        500
+      );
+
+      try {
+        await reorderAllPlayerSpaces(
+          member.guild
+        );
+      } catch (error) {
+        console.error(
+          `❌ Player Spaces : rangement après le départ de ${member.user.tag} impossible :`,
+          error
+        );
+      }
+
+      console.log(
+        `✅ Player Spaces : nettoyage du départ de ${member.user.tag} terminé.`
+      );
+      console.log('');
+    }
+  );
+}
+
+// ============================================================
 // MODULE PRINCIPAL
 // ============================================================
 
@@ -1805,6 +1918,27 @@ function startPlayerSpaces(
   );
 
   // ==========================================================
+  // DÉPART MEMBRE
+  // ==========================================================
+
+  client.on(
+    'guildMemberRemove',
+    async member => {
+      try {
+        await handleMemberRemove(
+          member
+        );
+
+      } catch (error) {
+        console.error(
+          '❌ Player Spaces : erreur départ membre :',
+          error
+        );
+      }
+    }
+  );
+
+  // ==========================================================
   // SYNCHRONISATION INITIALE
   // ==========================================================
 
@@ -1835,6 +1969,7 @@ module.exports = {
   syncAllGuilds,
   syncGuild,
   syncMember,
+  handleMemberRemove,
   reorderAllPlayerSpaces,
   reorderGameSpaces,
 
