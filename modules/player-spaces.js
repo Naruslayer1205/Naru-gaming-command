@@ -632,8 +632,33 @@ async function cleanupOrphanPlayerSpaces(
       if (
         !ownerId
       ) {
+        // Discord peut supprimer automatiquement l'overwrite utilisateur
+        // lorsqu'un membre quitte le serveur. Dans ce cas, une catégorie
+        // reconnue comme Player Space mais sans propriétaire utilisateur
+        // identifiable est considérée comme orpheline.
         console.warn(
-          '   ⚠️ Propriétaire introuvable dans les permissions — aucune suppression.'
+          '   ⚠️ Aucun propriétaire utilisateur dans les permissions — Player Space orphelin.'
+        );
+
+        console.log(
+          '   🗑️ Suppression de la catégorie orpheline et de ses salons...'
+        );
+
+        const deleted =
+          await deleteCategoryAndChildren(
+            guild,
+            category,
+            'Naru Gaming Command — Player Space sans propriétaire'
+          );
+
+        if (
+          deleted
+        ) {
+          deletedCount++;
+        }
+
+        await sleep(
+          350
         );
 
         continue;
