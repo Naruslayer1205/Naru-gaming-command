@@ -692,6 +692,151 @@ async function findLinkMessage(
 }
 
 // ============================================================
+// SYNCHRONISATION DES DONNÉES MINECRAFT
+// ============================================================
+
+async function upsertMinecraftEmbed(
+  channel,
+  footerText,
+  embed
+) {
+  try {
+    const messages =
+      await channel.messages.fetch({
+        limit: 50
+      });
+
+    const existing =
+      messages.find(
+        message =>
+          message.author.id ===
+            channel.client.user.id &&
+          message.embeds?.[0]
+            ?.footer?.text ===
+            footerText
+      );
+
+    if (existing) {
+      await existing.edit({
+        content: null,
+        embeds: [embed]
+      });
+
+      return existing;
+    }
+
+    return await channel.send({
+      embeds: [embed]
+    });
+
+  } catch (error) {
+    console.error(
+      '❌ Minecraft : mise à jour embed impossible :',
+      error
+    );
+
+    return null;
+  }
+}
+
+async function syncMinecraftWorld(
+  member,
+  category,
+  payload
+) {
+  const channel =
+    findChannel(
+      member.guild,
+      category,
+      CHANNEL_NAMES.world
+    );
+
+  if (!channel) {
+    return false;
+  }
+
+  const instance =
+    String(
+      payload.instance || 'Inconnue'
+    ).trim();
+
+  const world =
+    String(
+      payload.world || 'Inconnu'
+    ).trim();
+
+  const launcher =
+    String(
+      payload.launcher || 'CurseForge'
+    ).trim();
+
+  const detectedAt =
+    payload.detectedAt
+      ? new Date(payload.detectedAt)
+      : new Date();
+
+  const timestamp =
+    Number.isNaN(
+      detectedAt.getTime()
+    )
+      ? new Date()
+      : detectedAt;
+
+  const embed =
+    new EmbedBuilder()
+      .setTitle(
+        '🌍 Monde Minecraft actif'
+      )
+      .setColor(0x57F287)
+      .setDescription(
+        'Le Bridge affiche uniquement la **save active la plus récente**.'
+      )
+      .addFields(
+        {
+          name: '📦 Instance / Modpack',
+          value: `\`${instance}\``,
+          inline: false
+        },
+        {
+          name: '🌍 Save active',
+          value: `\`${world}\``,
+          inline: false
+        },
+        {
+          name: '🚀 Launcher',
+          value: `\`${launcher}\``,
+          inline: true
+        },
+        {
+          name: '🟢 Minecraft',
+          value: 'Détecté',
+          inline: true
+        },
+        {
+          name: '🔄 Synchronisation',
+          value:
+            `<t:${Math.floor(
+              timestamp.getTime() / 1000
+            )}:R>`,
+          inline: false
+        }
+      )
+      .setFooter({
+        text:
+          'Naru Minecraft Bridge • Monde'
+      })
+      .setTimestamp();
+
+  await upsertMinecraftEmbed(
+    channel,
+    'Naru Minecraft Bridge • Monde',
+    embed
+  );
+
+  return true;
+}
+
+// ============================================================
 // PANNEAU DE CONNEXION
 // ============================================================
 
@@ -1641,6 +1786,162 @@ async function handleMinecraftRequest(
     );
 
     return true;
+  }
+
+  // ----------------------------------------------------------
+  // SYNCHRONISATION MONDE / SAVE ACTIVE
+  // ----------------------------------------------------------
+
+  if (
+    request.method === 'POST' &&
+    url.pathname ===
+      '/minecraft/sync'
+  ) {
+    const auth =
+      authenticateInstallation(
+        request
+      );
+
+    if (!auth) {
+      sendJson(
+        response,
+        401,
+        {
+          ok: false,
+          error:
+            'Authentification invalide.'
+        }
+      );
+
+      return true;
+    }
+
+    try {
+      const body =
+        await readJsonBody(
+          request
+        );
+
+      const instance =
+        String(
+          body.instance || ''
+        ).trim();
+
+      const world =
+        String(
+          body.world || ''
+        ).trim();
+
+      if (
+        !instance ||
+        !world
+      ) {
+        sendJson(
+          response,
+          400,
+          {
+            ok: false,
+            error:
+              'Instance ou save active manquante.'
+          }
+        );
+
+        return true;
+      }
+
+      const discord =
+        await findDiscordMember(
+          auth.userId
+        );
+
+      if (!discord) {
+        sendJson(
+          response,
+          404,
+          {
+            ok: false,
+            error:
+              'Compte Discord introuvable.'
+          }
+        );
+
+        return true;
+      }
+
+      const category =
+        findMinecraftCategory(
+          discord.guild,
+          discord.member
+        );
+
+      if (!category) {
+        sendJson(
+          response,
+          404,
+          {
+            ok: false,
+            error:
+              'Player Space Minecraft introuvable.'
+          }
+        );
+
+        return true;
+      }
+
+      await syncMinecraftWorld(
+        discord.member,
+        category,
+        body
+      );
+
+      auth.user.lastSeenAt =
+        new Date().toISOString();
+
+      auth.user.lastInstance =
+        instance;
+
+      auth.user.lastWorld =
+        world;
+
+      auth.data.users[
+        auth.userId
+      ] = auth.user;
+
+      saveData(
+        auth.data
+      );
+
+      sendJson(
+        response,
+        200,
+        {
+          ok: true,
+          synced: true,
+          instance,
+          world
+        }
+      );
+
+      return true;
+
+    } catch (error) {
+      console.error(
+        '❌ Minecraft : erreur synchronisation monde :',
+        error
+      );
+
+      sendJson(
+        response,
+        500,
+        {
+          ok: false,
+          error:
+            'Erreur pendant la synchronisation Minecraft.'
+        }
+      );
+
+      return true;
+    }
   }
 
   // ----------------------------------------------------------
